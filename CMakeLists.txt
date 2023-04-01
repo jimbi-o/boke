@@ -1,11 +1,22 @@
 cmake_minimum_required(VERSION 3.15)
-project(minimalcpppj
+project(boke
   VERSION 1.0
-  DESCRIPTION "minimal cpp pj template"
+  DESCRIPTION "A real-time renderer for personal experiments using d3d12."
   LANGUAGES CXX
 )
 
-include(cmake/CPM.cmake)
+# Define a function to download and include CPM
+function(download_cpm)
+  if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake")
+    message(STATUS "Downloading CPM.cmake...")
+    file(DOWNLOAD "https://github.com/TheLartians/CPM.cmake/releases/latest/download/cpm.cmake"
+      "${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake")
+  endif()
+  include("${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake")
+endfunction()
+
+download_cpm()
+
 CPMAddPackage("gh:onqtam/doctest#2.4.6")
 CPMAddPackage("gh:gabime/spdlog@1.9.2")
 
@@ -17,6 +28,7 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 else()
   add_library(${PROJECT_NAME})
 endif()
+
 target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE spdlog)
 set_target_properties(spdlog PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:spdlog,INTERFACE_INCLUDE_DIRECTORIES>)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
