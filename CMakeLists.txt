@@ -29,13 +29,16 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 CPMAddPackage("gh:Tencent/rapidjson@1.1.0")
-CPMAddPackage("gh:jimbi-o/tote#bb73d219d6206ee5204cd6c488423c9614ad5668")
+CPMAddPackage("gh:jimbi-o/tote#fb99dc859fbe70573bf2b664e728756a84b24d4e")
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   add_executable(${CMAKE_PROJECT_NAME})
-	target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
-	target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PUBLIC "${doctest_SOURCE_DIR}")
-	add_subdirectory(tests)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
+  target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PUBLIC "${doctest_SOURCE_DIR}")
+  add_subdirectory(tests)
+  if(MSVC)
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT {$CMAKE_PROJECT_NAME})
+  endif()
 else()
   add_library(${PROJECT_NAME})
 endif()
@@ -67,6 +70,6 @@ target_precompile_headers(${PROJECT_NAME}
   "${spdlog_SOURCE_DIR}/include/spdlog/spdlog.h"
   "${string_id_SOURCE_DIR}/database.hpp"
   "${string_id_SOURCE_DIR}/string_id.hpp"
-  "${RapidJSON_SOURCE_DIR}/document.h"
+  "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
 )
 add_subdirectory(src)
