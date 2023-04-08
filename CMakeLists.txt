@@ -17,8 +17,19 @@ endfunction()
 
 download_cpm()
 
-CPMAddPackage("gh:onqtam/doctest#2.4.6")
-CPMAddPackage("gh:gabime/spdlog@1.9.2")
+CPMAddPackage("gh:onqtam/doctest#v2.4.11")
+CPMAddPackage("gh:gabime/spdlog@1.11.0")
+CPMAddPackage("gh:recp/cglm#v0.8.9")
+CPMAddPackage("gh:foonathan/string_id#b5a21bb9e1f8cebc64a3daa2cba16ffce8d0a334")
+CPMAddPackage("gh:foonathan/debug_assert#v1.3.3")
+CPMAddPackage(
+  NAME sebbbi_OffsetAllocator
+  GITHUB_REPOSITORY "sebbbi/OffsetAllocator"
+  GIT_TAG 3610a7377088b1e8c8f1525f458c96038a4e6fc0
+  DOWNLOAD_ONLY YES
+)
+CPMAddPackage("gh:Tencent/rapidjson@1.1.0")
+CPMAddPackage("gh:jimbi-o/tote#bb73d219d6206ee5204cd6c488423c9614ad5668")
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   add_executable(${CMAKE_PROJECT_NAME})
@@ -31,7 +42,7 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE spdlog)
 set_target_properties(spdlog PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:spdlog,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog cglm foonathan_string_id tote)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -39,14 +50,23 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<CXX_COMPILER_ID:Clang>:-Weverything -Wno-c++98-c++11-c++14-compat -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-c++20-compat>
   $<$<CXX_COMPILER_ID:MSVC>:/W4 /MP>
 )
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-  $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>)
+target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>)
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   "include"
+  PRIVATE
+  "${string_id_BINARY_DIR}"
+  "${sebbbi_OffsetAllocator_SOURCE_DIR}"
+  "${RapidJSON_SOURCE_DIR}"
+  "${tote_SOURCE_DIR}"
 )
 target_precompile_headers(${PROJECT_NAME}
   PRIVATE
+  "${cglm_SOURCE_DIR}/include/cglm/call.h"
   "${spdlog_SOURCE_DIR}/include/spdlog/spdlog.h"
+  "${string_id_SOURCE_DIR}/database.hpp"
+  "${string_id_SOURCE_DIR}/string_id.hpp"
+  "${RapidJSON_SOURCE_DIR}/document.h"
 )
 add_subdirectory(src)
