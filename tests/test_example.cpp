@@ -47,7 +47,7 @@ auto GetPointer(const boke::AllocatorData* allocator_data, const OffsetAllocator
 auto GetAllocatorData() {
   const auto size = buffer_size_in_bytes;
   const auto alignment = 8;
-  const auto initial_capacity = 8;
+  const auto initial_capacity = 4;
   boke::AllocatorData allocator_data {
     .offset_allocator = OffsetAllocator::Allocator(size / alignment),
     .head_addr = reinterpret_cast<std::uintptr_t>(buffer),
@@ -96,14 +96,14 @@ auto ExpandList(boke::AllocatorData* allocator_data) {
   const auto [offset_to_metadata_list, total_size] = CalculateListSizeToAllocate(allocator_data, new_capacity);
   const auto allocation = allocator_data->offset_allocator.allocate(total_size / allocator_data->alignment);
   auto offset_list = GetPointer<uint32_t>(allocator_data, allocation);
-  auto metadata_list = static_cast<OffsetAllocator::NodeIndex*>(reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(allocator_data->offset_list) + offset_to_metadata_list));
+  auto metadata_list = static_cast<OffsetAllocator::NodeIndex*>(reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(offset_list) + offset_to_metadata_list));
   memcpy(offset_list, allocator_data->offset_list, sizeof(offset_list[0]) * allocator_data->offset_num);
   memcpy(metadata_list, allocator_data->metadata_list, sizeof(metadata_list[0]) * allocator_data->offset_num);
+  boke::Deallocate(allocator_data->offset_list, allocator_data);
   allocator_data->offset_list = offset_list;
   allocator_data->metadata_list = metadata_list;
   AddAllocation(allocator_data, allocation);
   allocator_data->offset_capacity = new_capacity;
-  boke::Deallocate(allocator_data->offset_list, allocator_data);
 }
 } // namespace
 namespace boke {
@@ -111,7 +111,7 @@ void* Allocate(const uint32_t size, AllocatorData* allocator_data) {
   if (IsListExpansionNeeded(allocator_data)) {
     ExpandList(allocator_data);
   }
-  auto allocation = allocator_data->offset_allocator.allocate(size);
+  auto allocation = allocator_data->offset_allocator.allocate(size / allocator_data->alignment);
   AddAllocation(allocator_data, allocation);
   return GetVoidPointer(allocator_data, allocation);
 }
@@ -161,10 +161,47 @@ TEST_CASE("array with custom allocation") {
   array.push_back(7);
   array.push_back(9);
   array.push_back(101);
+  array.push_back(102);
+  Array<uint32_t> array2(GetAllocatorCallbacks());
+  array2.push_back(1);
+  array2.push_back(2);
+  array2.push_back(3);
+  array2.push_back(4);
+  array2.push_back(5);
+  array.push_back(1001);
+  array.push_back(1002);
+  array2.push_back(11);
+  array2.push_back(12);
+  array.push_back(10001);
+  array.push_back(10002);
+  array.push_back(10003);
+  array.push_back(10004);
+  array2.push_back(101);
+  array2.push_back(102);
+  array2.push_back(103);
+  array2.push_back(104);
   CHECK_EQ(array[0], 1);
   CHECK_EQ(array[1], 3);
   CHECK_EQ(array[2], 5);
   CHECK_EQ(array[3], 7);
   CHECK_EQ(array[4], 9);
   CHECK_EQ(array[5], 101);
+  CHECK_EQ(array[6], 102);
+  CHECK_EQ(array[7], 1001);
+  CHECK_EQ(array[8], 1002);
+  CHECK_EQ(array[9], 10001);
+  CHECK_EQ(array[10], 10002);
+  CHECK_EQ(array[11], 10003);
+  CHECK_EQ(array[12], 10004);
+  CHECK_EQ(array2[0], 1);
+  CHECK_EQ(array2[1], 2);
+  CHECK_EQ(array2[2], 3);
+  CHECK_EQ(array2[3], 4);
+  CHECK_EQ(array2[4], 5);
+  CHECK_EQ(array2[5], 11);
+  CHECK_EQ(array2[6], 12);
+  CHECK_EQ(array2[7], 101);
+  CHECK_EQ(array2[8], 102);
+  CHECK_EQ(array2[9], 103);
+  CHECK_EQ(array2[10], 104);
 }
