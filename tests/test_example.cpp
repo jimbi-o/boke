@@ -118,7 +118,11 @@ void* Allocate(const uint32_t size, AllocatorData* allocator_data) {
 void Deallocate(void* ptr, AllocatorData* allocator_data) {
   const auto [index, allocation_to_remove] = GetAllocation(allocator_data, ptr);
   allocator_data->offset_allocator.free(allocation_to_remove);
-  allocator_data->offset_list[index] = ~0U;
+  if (index + 1 == allocator_data->offset_num) {
+    allocator_data->offset_num--;
+  } else {
+    allocator_data->offset_list[index] = ~0U;
+  }
 }
 tote::AllocatorCallbacks<AllocatorData> GetAllocatorCallbacks() {
   static auto allocator_data = GetAllocatorData();
