@@ -95,15 +95,21 @@ auto ExpandList(boke::AllocatorData* allocator_data) {
   // assert(new_capacity > allocator_data->offset_num); // TODO use debug_assert
   const auto [offset_to_metadata_list, total_size] = CalculateListSizeToAllocate(allocator_data, new_capacity);
   const auto allocation = allocator_data->offset_allocator.allocate(total_size / allocator_data->alignment);
+  boke::Deallocate(allocator_data->offset_list, allocator_data);
   auto offset_list = GetPointer<uint32_t>(allocator_data, allocation);
   auto metadata_list = static_cast<OffsetAllocator::NodeIndex*>(reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(offset_list) + offset_to_metadata_list));
-  memcpy(offset_list, allocator_data->offset_list, sizeof(offset_list[0]) * allocator_data->offset_num);
-  memcpy(metadata_list, allocator_data->metadata_list, sizeof(metadata_list[0]) * allocator_data->offset_num);
-  boke::Deallocate(allocator_data->offset_list, allocator_data);
+  uint32_t offset_num = 0;
+  for (uint32_t i = 0; i < allocator_data->offset_num; i++) {
+    if (allocator_data->offset_list[i] == ~0U) { continue; }
+    offset_list[offset_num] = allocator_data->offset_list[i];
+    metadata_list[offset_num] = allocator_data->metadata_list[i];
+    offset_num++;
+  }
   allocator_data->offset_list = offset_list;
   allocator_data->metadata_list = metadata_list;
   AddAllocation(allocator_data, allocation);
   allocator_data->offset_capacity = new_capacity;
+  allocator_data->offset_num = offset_num;
 }
 } // namespace
 namespace boke {
