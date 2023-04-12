@@ -2,5 +2,7 @@ target_sources(${PROJECT_NAME}
   PRIVATE
   "${sebbbi_OffsetAllocator_SOURCE_DIR}/offsetAllocator.hpp"
   "${sebbbi_OffsetAllocator_SOURCE_DIR}/offsetAllocator.cpp"
-  "dummy.cpp"
+  allocator.cpp
+  container.cpp
+  util.cpp
 )
