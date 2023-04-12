@@ -29,7 +29,7 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 CPMAddPackage("gh:Tencent/rapidjson@1.1.0")
-CPMAddPackage("gh:jimbi-o/tote#fb99dc859fbe70573bf2b664e728756a84b24d4e")
+CPMAddPackage("gh:jimbi-o/tote#7af765e708e3e575f221ed4b62614af0e022524a")
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   add_executable(${CMAKE_PROJECT_NAME})
