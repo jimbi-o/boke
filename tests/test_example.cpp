@@ -28,7 +28,7 @@ TEST_CASE("sid") {
 TEST_CASE("array with custom allocation") {
   using namespace boke;
   auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
-  Array<uint32_t> array(GetAllocatorCallbacks(&allocator_data));
+  Array<uint32_t> array(GetAllocatorCallbacks(allocator_data));
   array.push_back(1);
   array.push_back(3);
   array.push_back(5);
@@ -36,7 +36,7 @@ TEST_CASE("array with custom allocation") {
   array.push_back(9);
   array.push_back(101);
   array.push_back(102);
-  Array<uint32_t> array2(GetAllocatorCallbacks(&allocator_data));
+  Array<uint32_t> array2(GetAllocatorCallbacks(allocator_data));
   array2.push_back(1);
   array2.push_back(2);
   array2.push_back(3);
