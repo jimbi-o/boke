@@ -10,21 +10,6 @@ TEST_CASE("log") {
   spdlog::info("hello {}", "world");
   CHECK_UNARY(true);
 }
-TEST_CASE("sid") {
-  namespace sid = foonathan::string_id;
-  using namespace sid::literals;
-  sid::default_database database;
-  sid::string_id id("Test", database);
-  switch (id.hash_code()) {
-    case "Test"_id:
-      CHECK_UNARY(true);
-      break;
-    case "NoTest"_id:
-    default:
-      CHECK_UNARY(false);
-      break;
-  }
-}
 TEST_CASE("array with custom allocation") {
   using namespace boke;
   auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
@@ -88,4 +73,19 @@ TEST_CASE("array with custom allocation") {
     CHECK_EQ(array[i], i * 2);
     CHECK_EQ(array2[i], i + 1);
   }
+}
+TEST_CASE("string hash map") {
+  using namespace boke;
+  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
+  StrHashMap<uint32_t> map(GetAllocatorCallbacks(allocator_data));
+  map.insert("TestA"_id, 0);
+  map.insert("TestB"_id, 1);
+  map.insert("TestC"_id, 2);
+  CHECK_EQ(map["TestA"_id], 0);
+  CHECK_EQ(map["TestB"_id], 1);
+  CHECK_EQ(map["TestC"_id], 2);
+  map.insert("TestA"_id, 3);
+  CHECK_EQ(map["TestA"_id], 3);
+  CHECK_EQ(map["TestB"_id], 1);
+  CHECK_EQ(map["TestC"_id], 2);
 }

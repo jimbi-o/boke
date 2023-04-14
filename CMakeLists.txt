@@ -20,7 +20,12 @@ download_cpm()
 CPMAddPackage("gh:onqtam/doctest#v2.4.11")
 CPMAddPackage("gh:gabime/spdlog@1.11.0")
 CPMAddPackage("gh:recp/cglm#v0.8.9")
-CPMAddPackage("gh:foonathan/string_id#b5a21bb9e1f8cebc64a3daa2cba16ffce8d0a334")
+CPMAddPackage(
+  NAME foonathan_string_id
+  GITHUB_REPOSITORY "foonathan/string_id"
+  GIT_TAG b5a21bb9e1f8cebc64a3daa2cba16ffce8d0a334
+  OPTIONS "FOONATHAN_STRING_ID_MULTITHREADED OFF"
+)
 CPMAddPackage("gh:foonathan/debug_assert#v1.3.3")
 CPMAddPackage(
   NAME sebbbi_OffsetAllocator
@@ -29,7 +34,7 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 CPMAddPackage("gh:Tencent/rapidjson@1.1.0")
-CPMAddPackage("gh:jimbi-o/tote#7af765e708e3e575f221ed4b62614af0e022524a")
+CPMAddPackage("gh:jimbi-o/tote#ebccdf2efc15bd405155526a4c2af98b4d9ef1b3")
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   add_executable(${CMAKE_PROJECT_NAME})
@@ -59,7 +64,7 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC
   "include"
   PRIVATE
-  "${string_id_BINARY_DIR}"
+  "${foonathan_string_id_BINARY_DIR}"
   "${sebbbi_OffsetAllocator_SOURCE_DIR}"
   "${RapidJSON_SOURCE_DIR}"
   "${tote_SOURCE_DIR}"
@@ -68,8 +73,8 @@ target_precompile_headers(${PROJECT_NAME}
   PRIVATE
   "${cglm_SOURCE_DIR}/include/cglm/call.h"
   "${spdlog_SOURCE_DIR}/include/spdlog/spdlog.h"
-  "${string_id_SOURCE_DIR}/database.hpp"
-  "${string_id_SOURCE_DIR}/string_id.hpp"
+  "${foonathan_string_id_SOURCE_DIR}/database.hpp"
+  "${foonathan_string_id_SOURCE_DIR}/string_id.hpp"
   "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
 )
 add_subdirectory(src)
