@@ -5,4 +5,5 @@ target_sources(${PROJECT_NAME}
   allocator.cpp
   container.cpp
   util.cpp
+  str_hash.cpp
 )

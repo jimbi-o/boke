@@ -1,5 +1,6 @@
 #include "boke/allocator.h"
 #include "boke/container.h"
+#include "boke/str_hash.h"
 #include "boke/util.h"
 #include <doctest/doctest.h>
 namespace {
