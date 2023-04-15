@@ -26,14 +26,14 @@ CPMAddPackage(
   GIT_TAG b5a21bb9e1f8cebc64a3daa2cba16ffce8d0a334
   OPTIONS "FOONATHAN_STRING_ID_MULTITHREADED OFF"
 )
-CPMAddPackage("gh:foonathan/debug_assert#v1.3.3")
+CPMAddPackage("gh:foonathan/debug_assert#7ea47091830eec9a9c6a338c8a29da70494692a5")
 CPMAddPackage(
   NAME sebbbi_OffsetAllocator
   GITHUB_REPOSITORY "sebbbi/OffsetAllocator"
   GIT_TAG 3610a7377088b1e8c8f1525f458c96038a4e6fc0
   DOWNLOAD_ONLY YES
 )
-CPMAddPackage("gh:Tencent/rapidjson@1.1.0")
+CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
 CPMAddPackage("gh:jimbi-o/tote#ebccdf2efc15bd405155526a4c2af98b4d9ef1b3")
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -50,7 +50,7 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE spdlog)
 set_target_properties(spdlog PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:spdlog,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog cglm foonathan_string_id tote)
+target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog cglm foonathan_string_id tote debug_assert)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -68,6 +68,7 @@ target_include_directories(${PROJECT_NAME}
   "${sebbbi_OffsetAllocator_SOURCE_DIR}"
   "${RapidJSON_SOURCE_DIR}"
   "${tote_SOURCE_DIR}"
+  "${debug_assert_SOURCE_DIR}"
 )
 target_precompile_headers(${PROJECT_NAME}
   PRIVATE
