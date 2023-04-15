@@ -1,5 +1,6 @@
 #include "boke/allocator.h"
 #include "boke/container.h"
+#include "boke/debug_assert.h"
 #include "boke/str_hash.h"
 #include "boke/util.h"
 #include <doctest/doctest.h>
@@ -89,4 +90,8 @@ TEST_CASE("string hash map") {
   CHECK_EQ(map["TestA"_id], 3);
   CHECK_EQ(map["TestB"_id], 1);
   CHECK_EQ(map["TestC"_id], 2);
+}
+TEST_CASE("assert") {
+  using namespace boke;
+  DEBUG_ASSERT(true, DebugAssert());
 }
