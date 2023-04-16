@@ -7,7 +7,7 @@ static std::byte buffer[buffer_size_in_bytes];
 } // namespace
 TEST_CASE("string hash") {
   using namespace boke;
-  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
+  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes);
   auto string_hash_database = CreateStringHashDatabase(allocator_data);
   char test_string[] = "test string";
   auto sid = GetSid(test_string, string_hash_database);

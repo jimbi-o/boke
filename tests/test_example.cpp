@@ -14,7 +14,7 @@ TEST_CASE("log") {
 }
 TEST_CASE("array with custom allocation") {
   using namespace boke;
-  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
+  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes);
   Array<uint32_t> array(GetAllocatorCallbacks(allocator_data));
   array.push_back(1);
   array.push_back(3);
@@ -78,7 +78,7 @@ TEST_CASE("array with custom allocation") {
 }
 TEST_CASE("string hash map") {
   using namespace boke;
-  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes, 8);
+  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes);
   StrHashMap<uint32_t> map(GetAllocatorCallbacks(allocator_data));
   map.insert("TestA"_id, 0);
   map.insert("TestB"_id, 1);
@@ -90,6 +90,22 @@ TEST_CASE("string hash map") {
   CHECK_EQ(map["TestA"_id], 3);
   CHECK_EQ(map["TestB"_id], 1);
   CHECK_EQ(map["TestC"_id], 2);
+  StrHashMap<uint32_t> map2(GetAllocatorCallbacks(allocator_data));
+  map2.insert("TestD"_id, 4);
+  map2.insert("TestE"_id, 5);
+  map2.insert("TestF"_id, 6);
+  map.insert("TestD"_id, 7);
+  map.insert("TestE"_id, 8);
+  map.insert("TestF"_id, 9);
+  CHECK_EQ(map["TestA"_id], 3);
+  CHECK_EQ(map["TestB"_id], 1);
+  CHECK_EQ(map["TestC"_id], 2);
+  CHECK_EQ(map["TestD"_id], 7);
+  CHECK_EQ(map["TestE"_id], 8);
+  CHECK_EQ(map["TestF"_id], 9);
+  CHECK_EQ(map2["TestD"_id], 4);
+  CHECK_EQ(map2["TestE"_id], 5);
+  CHECK_EQ(map2["TestF"_id], 6);
 }
 TEST_CASE("assert") {
   using namespace boke;
