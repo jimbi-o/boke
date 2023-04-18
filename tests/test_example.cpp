@@ -5,8 +5,8 @@
 #include "boke/util.h"
 #include <doctest/doctest.h>
 namespace {
-static const uint32_t buffer_size_in_bytes = 32 * 1024 * 1024;
-static std::byte buffer[buffer_size_in_bytes];
+static const uint32_t main_buffer_size_in_bytes = 32 * 1024 * 1024;
+static std::byte main_buffer[main_buffer_size_in_bytes];
 } // namespace
 TEST_CASE("log") {
   spdlog::info("hello {}", "world");
@@ -14,7 +14,7 @@ TEST_CASE("log") {
 }
 TEST_CASE("array with custom allocation") {
   using namespace boke;
-  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes);
+  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   Array<uint32_t> array(GetAllocatorCallbacks(allocator_data));
   array.push_back(1);
   array.push_back(3);
@@ -78,7 +78,7 @@ TEST_CASE("array with custom allocation") {
 }
 TEST_CASE("string hash map") {
   using namespace boke;
-  auto allocator_data = GetAllocatorData(buffer, buffer_size_in_bytes);
+  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   StrHashMap<uint32_t> map(GetAllocatorCallbacks(allocator_data));
   map.insert("TestA"_id, 0);
   map.insert("TestB"_id, 1);
@@ -110,4 +110,13 @@ TEST_CASE("string hash map") {
 TEST_CASE("assert") {
   using namespace boke;
   DEBUG_ASSERT(true, DebugAssert());
+}
+TEST_CASE("json") {
+  using namespace rapidjson;
+  const char json[] = R"--({"project":"rapidjson","stars":10})--";
+  // Could use `GenericDocument<rapidjson::UTF8<>, CustomAllocator> doc` instead,
+  // but free() function must be a static function.
+  Document d;
+  d.Parse(json);
+  CHECK_EQ(d["stars"], 10);
 }
