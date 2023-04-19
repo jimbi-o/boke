@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 #include "debug_assert.hpp"
 namespace boke {
 struct DebugAssert

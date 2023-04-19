@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 #include "tote/array.h"
 #include "tote/hash_map.h"
 namespace boke {

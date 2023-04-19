@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 namespace boke {
 struct AllocatorData;
 AllocatorData* GetAllocatorData(void* buffer, const uint32_t buffer_size_in_bytes);

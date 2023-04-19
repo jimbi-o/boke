@@ -5,6 +5,8 @@ project(boke
   LANGUAGES CXX
 )
 
+option(BOKE_BUILD_TESTING "Build test" ON)
+
 # Define a function to download and include CPM
 function(download_cpm)
   if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake")
@@ -36,16 +38,18 @@ CPMAddPackage(
 CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
 CPMAddPackage("gh:jimbi-o/tote#4780f32aaa425e3f2d9dd5927a4ef50463680255")
 
+add_subdirectory(src)
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-  add_executable(${CMAKE_PROJECT_NAME})
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
-  target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PUBLIC "${doctest_SOURCE_DIR}")
-  add_subdirectory(tests)
+  if (BOKE_BUILD_TESTING)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
+    target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PUBLIC "${doctest_SOURCE_DIR}")
+    add_subdirectory(tests)
+  else()
+    add_subdirectory(apps)
+  endif()
   if(MSVC)
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT {$CMAKE_PROJECT_NAME})
   endif()
-else()
-  add_library(${PROJECT_NAME})
 endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE spdlog)
@@ -63,19 +67,20 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:NOM
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   "include"
-  PRIVATE
   "${foonathan_string_id_BINARY_DIR}"
+  "${foonathan_string_id_SOURCE_DIR}"
   "${sebbbi_OffsetAllocator_SOURCE_DIR}"
   "${RapidJSON_SOURCE_DIR}"
-  "${tote_SOURCE_DIR}"
+  "${tote_SOURCE_DIR}/include"
   "${debug_assert_SOURCE_DIR}"
+  "${spdlog_SOURCE_DIR}/include"
 )
 target_precompile_headers(${PROJECT_NAME}
-  PRIVATE
+  PUBLIC
+  <stdint.h>
   "${cglm_SOURCE_DIR}/include/cglm/call.h"
   "${spdlog_SOURCE_DIR}/include/spdlog/spdlog.h"
   "${foonathan_string_id_SOURCE_DIR}/database.hpp"
   "${foonathan_string_id_SOURCE_DIR}/string_id.hpp"
   "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
 )
-add_subdirectory(src)

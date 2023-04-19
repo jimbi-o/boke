@@ -1,3 +1,4 @@
+add_library(${PROJECT_NAME})
 target_sources(${PROJECT_NAME}
   PRIVATE
   "${sebbbi_OffsetAllocator_SOURCE_DIR}/offsetAllocator.hpp"

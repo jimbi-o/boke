@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "boke/allocator.h"
 #include "boke/str_hash.h"
 #include <doctest/doctest.h>
