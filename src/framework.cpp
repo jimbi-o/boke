@@ -1,5 +1,4 @@
 #include "boke/framework.h"
-#include <windows.h>
 #include "boke/allocator.h"
 #include "json.h"
 namespace {

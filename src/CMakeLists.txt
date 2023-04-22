@@ -23,4 +23,6 @@ target_sources(${PROJECT_NAME}
   str_hash.cpp
   framework.cpp
   json.cpp
+  gfx.cpp
+  string_util.cpp
 )
