@@ -65,7 +65,11 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<CXX_COMPILER_ID:Clang>:-Weverything -Wno-c++98-c++11-c++14-compat -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-c++20-compat>
   $<$<CXX_COMPILER_ID:MSVC>:/W4 /MP>
 )
-target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>)
+target_compile_definitions(${PROJECT_NAME}
+  PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
+  IMGUI_DEFINE_MATH_OPERATORS
+)
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
