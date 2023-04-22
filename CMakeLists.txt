@@ -57,7 +57,15 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE spdlog)
 set_target_properties(spdlog PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:spdlog,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog cglm foonathan_string_id tote debug_assert)
+target_link_libraries(${PROJECT_NAME}
+  PRIVATE
+  spdlog::spdlog
+  cglm
+  foonathan_string_id
+  tote
+  debug_assert
+  $<$<CONFIG:Debug>:dxguid.lib>
+)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PRIVATE

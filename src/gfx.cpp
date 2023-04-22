@@ -1,11 +1,18 @@
 #include <Windows.h>
+#include "dxgi1_6.h"
+#ifndef NDEBUG
+#include "dxgidebug.h"
+#endif
 #include "boke/allocator.h"
+#include "boke/debug_assert.h"
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx12.h"
 #include "json.h"
 #include "string_util.h"
 #include "doctest/doctest.h"
+#define CALL_DLL_FUNCTION(library, function) reinterpret_cast<decltype(&function)>(GetProcAddress(library, #function))
+#define LOAD_DLL_FUNCTION(library, function) decltype(&function) function = reinterpret_cast<decltype(function)>(GetProcAddress(library, #function))
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 namespace {
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -58,11 +65,67 @@ auto CreateWin32Window(const rapidjson::Document& json, boke::AllocatorData* all
     .h_instance = wc.hInstance,
   };
 }
-auto DestroyWin32Window(WindowInfo& info, boke::AllocatorData* allocator_data) {
+auto ReleaseWin32Window(WindowInfo& info, boke::AllocatorData* allocator_data) {
   using namespace boke;
   ::DestroyWindow(info.hwnd);
   ::UnregisterClassW(info.class_name, info.h_instance);
   Deallocate(info.class_name, allocator_data);
+}
+struct DxgiCore {
+  HMODULE library{};
+  IDXGIFactory7* factory{};
+  IDXGIAdapter4* adapter{};
+};
+enum AdapterType : uint8_t { kHighPerformance, kWarp, };
+template <AdapterType adapter_type>
+auto InitDxgi() {
+  using namespace boke;
+  SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  auto library = LoadLibrary("Dxgi.dll");
+  DEBUG_ASSERT(library, DebugAssert());
+  IDXGIFactory7* factory = nullptr;
+  auto hr = CALL_DLL_FUNCTION(library, CreateDXGIFactory2)(0, IID_PPV_ARGS(&factory));
+  DEBUG_ASSERT(SUCCEEDED(hr) && factory, DebugAssert{});
+  IDXGIAdapter4* adapter = nullptr;
+  if constexpr (adapter_type == AdapterType::kWarp) {
+    hr = factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter));
+  } else {
+    hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter));
+  }
+  DEBUG_ASSERT(SUCCEEDED(hr) && adapter, DebugAssert{});
+  {
+    DXGI_ADAPTER_DESC1 desc;
+    adapter->GetDesc1(&desc);
+    if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+      spdlog::info("IDXGIAdapter4 is software");
+    }
+  }
+  return DxgiCore {
+    .library = library,
+    .factory = factory,
+    .adapter = adapter,
+  };
+}
+auto TermDxgi(DxgiCore& dxgi) {
+  auto refval = dxgi.adapter->Release();
+  if (refval != 0UL) {
+    spdlog::error("adapter reference left. {}", refval);
+  }
+  refval = dxgi.factory->Release();
+  if (refval != 0UL) {
+    spdlog::error("factory reference left. {}", refval);
+  }
+#ifndef NDEBUG
+  IDXGIDebug1* debug = nullptr;
+  auto hr = CALL_DLL_FUNCTION(dxgi.library, DXGIGetDebugInterface1)(0, IID_PPV_ARGS(&debug));
+  if (FAILED(hr)) {
+    spdlog::warn("DXGIGetDebugInterface failed. {}", hr);
+    return;
+  }
+  debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+  debug->Release();
+#endif
+  FreeLibrary(dxgi.library);
 }
 }
 TEST_CASE("imgui") {
@@ -72,5 +135,7 @@ TEST_CASE("imgui") {
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   auto json = GetJson("tests/config.json", allocator_data);
   auto window_info = CreateWin32Window(json, allocator_data);
-  DestroyWin32Window(window_info, allocator_data);
+  auto dxgi = InitDxgi<AdapterType::kHighPerformance>();
+  TermDxgi(dxgi);
+  ReleaseWin32Window(window_info, allocator_data);
 }
