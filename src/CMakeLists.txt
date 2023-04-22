@@ -22,4 +22,5 @@ target_sources(${PROJECT_NAME}
   util.cpp
   str_hash.cpp
   framework.cpp
+  json.cpp
 )
