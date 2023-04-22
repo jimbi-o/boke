@@ -37,6 +37,7 @@ CPMAddPackage(
 )
 CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
 CPMAddPackage("gh:jimbi-o/tote#4780f32aaa425e3f2d9dd5927a4ef50463680255")
+CPMAddPackage("gh:ocornut/imgui#v1.89.5")
 
 add_subdirectory(src)
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -77,6 +78,7 @@ target_include_directories(${PROJECT_NAME}
   "${debug_assert_SOURCE_DIR}"
   "${spdlog_SOURCE_DIR}/include"
   "${doctest_SOURCE_DIR}"
+  "${imgui_SOURCE_DIR}"
 )
 target_precompile_headers(${PROJECT_NAME}
   PUBLIC
@@ -86,4 +88,5 @@ target_precompile_headers(${PROJECT_NAME}
   "${foonathan_string_id_SOURCE_DIR}/database.hpp"
   "${foonathan_string_id_SOURCE_DIR}/string_id.hpp"
   "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
+  "${imgui_SOURCE_DIR}/imgui.h"
 )
