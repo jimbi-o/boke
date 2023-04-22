@@ -19,6 +19,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 namespace {
 using namespace boke;
+using D3d12Device = ID3D12Device10;
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) { return true; }
@@ -73,17 +74,42 @@ auto ReleaseWin32Window(WindowInfo& info, boke::AllocatorData* allocator_data) {
   ::UnregisterClassW(info.class_name, info.h_instance);
   Deallocate(info.class_name, allocator_data);
 }
+struct GfxLibraries {
+  HMODULE dxgi_library{};
+  HMODULE d3d12_library{};
+};
+auto LoadGfxLibraries() {
+  auto dxgi_library = LoadLibrary("Dxgi.dll");
+  DEBUG_ASSERT(dxgi_library, DebugAssert());
+  auto d3d12_library = LoadLibrary("D3D12.dll");
+  DEBUG_ASSERT(d3d12_library, DebugAssert{});
+  return GfxLibraries {
+    .dxgi_library = dxgi_library,
+    .d3d12_library = d3d12_library,
+  };
+}
+auto ReleaseGfxLibraries(GfxLibraries& libraries) {
+  FreeLibrary(libraries.d3d12_library);
+#ifndef NDEBUG
+  IDXGIDebug1* debug = nullptr;
+  auto hr = CALL_DLL_FUNCTION(libraries.dxgi_library, DXGIGetDebugInterface1)(0, IID_PPV_ARGS(&debug));
+  if (FAILED(hr)) {
+    spdlog::warn("DXGIGetDebugInterface failed. {}", hr);
+    return;
+  }
+  debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+  debug->Release();
+#endif
+  FreeLibrary(libraries.dxgi_library);
+}
 struct DxgiCore {
-  HMODULE library{};
   IDXGIFactory7* factory{};
   IDXGIAdapter4* adapter{};
 };
 enum AdapterType : uint8_t { kHighPerformance, kWarp, };
 template <AdapterType adapter_type>
-auto InitDxgi() {
+auto InitDxgi(HMODULE library) {
   SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-  auto library = LoadLibrary("Dxgi.dll");
-  DEBUG_ASSERT(library, DebugAssert());
   IDXGIFactory7* factory = nullptr;
   auto hr = CALL_DLL_FUNCTION(library, CreateDXGIFactory2)(0, IID_PPV_ARGS(&factory));
   DEBUG_ASSERT(SUCCEEDED(hr) && factory, DebugAssert{});
@@ -102,7 +128,6 @@ auto InitDxgi() {
     }
   }
   return DxgiCore {
-    .library = library,
     .factory = factory,
     .adapter = adapter,
   };
@@ -116,25 +141,8 @@ auto TermDxgi(DxgiCore& dxgi) {
   if (refval != 0UL) {
     spdlog::error("factory reference left. {}", refval);
   }
-#ifndef NDEBUG
-  IDXGIDebug1* debug = nullptr;
-  auto hr = CALL_DLL_FUNCTION(dxgi.library, DXGIGetDebugInterface1)(0, IID_PPV_ARGS(&debug));
-  if (FAILED(hr)) {
-    spdlog::warn("DXGIGetDebugInterface failed. {}", hr);
-    return;
-  }
-  debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-  debug->Release();
-#endif
-  FreeLibrary(dxgi.library);
 }
-struct D3d12Device {
-  HMODULE library{};
-  ID3D12Device10* device{};
-};
-auto InitDevice(IDXGIAdapter4* adapter) {
-  auto library = LoadLibrary("D3D12.dll");
-  DEBUG_ASSERT(library, DebugAssert{});
+auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
 #ifndef NDEBUG
   if (IsDebuggerPresent()) {
     ID3D12Debug* debug_interface = nullptr;
@@ -151,23 +159,17 @@ auto InitDevice(IDXGIAdapter4* adapter) {
     }
   }
 #endif
-#if 0
   {
     UUID experimental_features[] = { D3D12ExperimentalShaderModels };
     auto hr = CALL_DLL_FUNCTION(library, D3D12EnableExperimentalFeatures)(1, experimental_features, nullptr, nullptr);
     if (SUCCEEDED(hr)) {
       spdlog::info("experimental shader models enabled.");
     } else {
-      logwarn("Failed to enable experimental shader models. {}", hr);
+      spdlog::warn("Failed to enable experimental shader models. {}", hr);
     }
   }
-#endif
-#ifdef USE_D3D12_AGILITY_SDK
   const auto feature_level = D3D_FEATURE_LEVEL_12_2;
-#else
-  const auto feature_level = D3D_FEATURE_LEVEL_12_1;
-#endif
-  ID3D12Device10* device{};
+  D3d12Device* device{};
   auto hr = CALL_DLL_FUNCTION(library, D3D12CreateDevice)(adapter, feature_level, IID_PPV_ARGS(&device));
   DEBUG_ASSERT(SUCCEEDED(hr) && device, DebugAssert{});
   if (FAILED(hr)) {
@@ -199,35 +201,23 @@ auto InitDevice(IDXGIAdapter4* adapter) {
   {
     D3D12_FEATURE_DATA_D3D12_OPTIONS5 options{};
     if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options, sizeof(options)))) {
-      spdlog::info("ray tracing tier:{} (1.0:{} 1.1:{})", options.RaytracingTier, D3D12_RAYTRACING_TIER_1_0, D3D12_RAYTRACING_TIER_1_1);
+      spdlog::info("ray tracing tier:{} (1.0:{} 1.1:{})", fmt::underlying(options.RaytracingTier), fmt::underlying(D3D12_RAYTRACING_TIER_1_0), fmt::underlying(D3D12_RAYTRACING_TIER_1_1));
     }
   }
   {
     D3D12_FEATURE_DATA_D3D12_OPTIONS7 options{};
     if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options, sizeof(options)))) {
-      spdlog::info("mesh shader tier:{} (1:{})", options.MeshShaderTier, D3D12_MESH_SHADER_TIER_1);
+      spdlog::info("mesh shader tier:{} (1:{})", fmt::underlying(options.MeshShaderTier), fmt::underlying(D3D12_MESH_SHADER_TIER_1));
     }
   }
-#ifdef USE_D3D12_AGILITY_SDK
   {
     D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
     if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options)))) {
       spdlog::info("enhanced barriers:{}", options.EnhancedBarriersSupported);
     }
   }
-#endif
   device->SetName(L"device");
-  return D3d12Device {
-    .library = library,
-    .device = device,
-  };
-}
-auto TermDevice(D3d12Device device) {
-  auto refval = device.device->Release();
-  if (refval != 0UL) {
-    spdlog::error("device reference left. {}", refval);
-  }
-  FreeLibrary(device.library);
+  return device;
 }
 }
 TEST_CASE("imgui") {
@@ -237,9 +227,11 @@ TEST_CASE("imgui") {
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   auto json = GetJson("tests/config.json", allocator_data);
   auto window_info = CreateWin32Window(json, allocator_data);
-  auto dxgi = InitDxgi<AdapterType::kHighPerformance>();
-  auto device = InitDevice(dxgi.adapter);
-  TermDevice(device);
+  auto gfx_libraries = LoadGfxLibraries();
+  auto dxgi = InitDxgi<AdapterType::kHighPerformance>(gfx_libraries.dxgi_library);
+  auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
+  device->Release();
   TermDxgi(dxgi);
+  ReleaseGfxLibraries(gfx_libraries);
   ReleaseWin32Window(window_info, allocator_data);
 }
