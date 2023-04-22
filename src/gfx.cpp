@@ -183,6 +183,7 @@ auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
       info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
       info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
       info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+#if 0
       D3D12_MESSAGE_SEVERITY suppressed_severity[] = {
         D3D12_MESSAGE_SEVERITY_INFO,
       };
@@ -194,6 +195,7 @@ auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
       // queue_filter.DenyList.NumIDs = _countof(supressed_id);
       // queue_filter.DenyList.pIDList = supressed_id;
       info_queue->PushStorageFilter(&queue_filter);
+#endif
       info_queue->Release();
     }
   }
@@ -219,6 +221,51 @@ auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
   device->SetName(L"device");
   return device;
 }
+auto GetDxgiFormat(const char* format) {
+  if (strcmp(format, "R8G8B8A8_UNORM") == 0) {
+    return DXGI_FORMAT_R8G8B8A8_UNORM;
+  }
+  if (strcmp(format, "R8G8B8A8_UNORM_SRGB") == 0) {
+    return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+  }
+  if (strcmp(format, "B8G8R8A8_UNORM") == 0) {
+    return DXGI_FORMAT_B8G8R8A8_UNORM;
+  }
+  if (strcmp(format, "B8G8R8A8_UNORM_SRGB") == 0) {
+    return DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+  }
+  if (strcmp(format, "R16G16B16A16_FLOAT") == 0) {
+    return DXGI_FORMAT_R16G16B16A16_FLOAT;
+  }
+  if (strcmp(format, "R10G10B10A2_UNORM") == 0) {
+    return DXGI_FORMAT_R10G10B10A2_UNORM;
+  }
+  if (strcmp(format, "R10G10B10_XR_BIAS_A2_UNORM") == 0) {
+    return DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM;
+  }
+  return DXGI_FORMAT_R8G8B8A8_UNORM;
+}
+auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag = D3D12_DESCRIPTOR_HEAP_FLAG_NONE) {
+  ID3D12DescriptorHeap* descriptor_heap{};
+  const D3D12_DESCRIPTOR_HEAP_DESC desc = {
+    .Type = descriptor_heap_type,
+    .NumDescriptors = descriptor_heap_num,
+    .Flags = descriptor_heap_flag,
+  };
+  auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return descriptor_heap;
+}
+auto GetDescriptorHeapHandleCpu(const uint32_t index, const uint32_t increment_size, const D3D12_CPU_DESCRIPTOR_HANDLE& handle_cpu) {
+  return D3D12_CPU_DESCRIPTOR_HANDLE{
+    .ptr = handle_cpu.ptr + increment_size * index,
+  };
+}
+auto GetDescriptorHeapHandleGpu(const uint32_t index, const uint32_t increment_size, const D3D12_GPU_DESCRIPTOR_HANDLE& handle_gpu) {
+  return D3D12_GPU_DESCRIPTOR_HANDLE{
+    .ptr = handle_gpu.ptr + increment_size * index,
+  };
+}
 }
 TEST_CASE("imgui") {
   using namespace boke;
@@ -230,6 +277,27 @@ TEST_CASE("imgui") {
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi<AdapterType::kHighPerformance>(gfx_libraries.dxgi_library);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
+  REQUIRE_NE(device, nullptr);
+  auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["cbv_srv_uav"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+  REQUIRE_NE(descriptor_heap, nullptr);
+  const auto descriptor_handle_increment_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  const auto descriptor_head_addr_cpu = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+  const auto descriptor_head_addr_gpu = descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+  const auto imgui_font_handle_cpu = GetDescriptorHeapHandleCpu(0, descriptor_handle_increment_size, descriptor_head_addr_cpu);
+  const auto imgui_font_handle_gpu = GetDescriptorHeapHandleGpu(0, descriptor_handle_increment_size, descriptor_head_addr_gpu);
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+  ImGui_ImplWin32_Init(window_info.hwnd);
+  ImGui_ImplDX12_Init(device,
+                      json["swapchain"]["num"].GetInt(),
+                      GetDxgiFormat(json["swapchain"]["format"].GetString()),
+                      descriptor_heap,
+                      imgui_font_handle_cpu,
+                      imgui_font_handle_gpu);
+  descriptor_heap->Release();
   device->Release();
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);

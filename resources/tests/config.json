@@ -1,5 +1,13 @@
 {
   "title": "boke test",
   "screen_width": 1980,
-  "screen_height": 1080
+  "screen_height": 1080,
+  "frame_buffer_num": 2,
+  "swapchain": {
+    "num": 3,
+    "format": "R8G8B8A8_UNORM"
+  },
+  "descriptor_handles": {
+    "cbv_srv_uav": 1024
+  }
 }
