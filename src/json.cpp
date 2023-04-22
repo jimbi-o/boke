@@ -24,7 +24,7 @@ auto LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator
   using namespace boke;
   auto file = OpenFile(filepath);
   auto file_size = GetFileSize(file);
-  auto buffer = static_cast<char*>(Allocate(file_size + 1, alignof(char), allocator_data));
+  auto buffer = AllocateArray<char>(file_size + 1, allocator_data);
   const auto read_size = ReadFileToBuffer(file, file_size, buffer);
   if (read_size != file_size) {
     Deallocate(buffer, allocator_data);
