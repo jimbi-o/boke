@@ -40,12 +40,17 @@ CPMAddPackage("gh:jimbi-o/tote#4780f32aaa425e3f2d9dd5927a4ef50463680255")
 
 add_subdirectory(src)
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  set_property(GLOBAL PROPERTY USE_FOLDERS ON)
   if (BOKE_BUILD_TESTING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
-    target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PUBLIC "${doctest_SOURCE_DIR}")
     add_subdirectory(tests)
+    set_directory_properties(PROPERTIES VS_STARTUP_PROJECT test)
+    set_target_properties(test PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources")
   else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_DISABLE)
     add_subdirectory(apps)
+    set_directory_properties(PROPERTIES VS_STARTUP_PROJECT app)
+    set_target_properties(app PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources")
   endif()
 endif()
 
@@ -67,10 +72,11 @@ target_include_directories(${PROJECT_NAME}
   "${foonathan_string_id_BINARY_DIR}"
   "${foonathan_string_id_SOURCE_DIR}"
   "${sebbbi_OffsetAllocator_SOURCE_DIR}"
-  "${RapidJSON_SOURCE_DIR}"
+  "${RapidJSON_SOURCE_DIR}/include"
   "${tote_SOURCE_DIR}/include"
   "${debug_assert_SOURCE_DIR}"
   "${spdlog_SOURCE_DIR}/include"
+  "${doctest_SOURCE_DIR}"
 )
 target_precompile_headers(${PROJECT_NAME}
   PUBLIC
