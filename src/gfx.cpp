@@ -256,15 +256,35 @@ auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE 
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return descriptor_heap;
 }
-auto GetDescriptorHeapHandleCpu(const uint32_t index, const uint32_t increment_size, const D3D12_CPU_DESCRIPTOR_HANDLE& handle_cpu) {
-  return D3D12_CPU_DESCRIPTOR_HANDLE{
-    .ptr = handle_cpu.ptr + increment_size * index,
+struct DescriptorHandleHeapInfoFull {
+  D3D12_CPU_DESCRIPTOR_HANDLE descriptor_head_addr_cpu{};
+  D3D12_GPU_DESCRIPTOR_HANDLE descriptor_head_addr_gpu{};
+  uint32_t descriptor_handle_increment_size{};
+};
+auto GetDescriptorHandleHeapInfoFull(ID3D12DescriptorHeap* descriptor_heap, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, D3d12Device* device) {
+  const auto descriptor_head_addr_cpu = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+  const auto descriptor_head_addr_gpu = descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+  const auto descriptor_handle_increment_size = device->GetDescriptorHandleIncrementSize(descriptor_heap_type);
+  return DescriptorHandleHeapInfoFull {
+    .descriptor_head_addr_cpu = descriptor_head_addr_cpu,
+    .descriptor_head_addr_gpu = descriptor_head_addr_gpu,
+    .descriptor_handle_increment_size = descriptor_handle_increment_size,
   };
 }
-auto GetDescriptorHeapHandleGpu(const uint32_t index, const uint32_t increment_size, const D3D12_GPU_DESCRIPTOR_HANDLE& handle_gpu) {
-  return D3D12_GPU_DESCRIPTOR_HANDLE{
-    .ptr = handle_gpu.ptr + increment_size * index,
+auto GetDescriptorHeapHandleCpu(const uint32_t index, const uint32_t increment_size, const D3D12_CPU_DESCRIPTOR_HANDLE& head_addr_cpu) {
+  return D3D12_CPU_DESCRIPTOR_HANDLE{
+    .ptr = head_addr_cpu.ptr + increment_size * index,
   };
+}
+auto GetDescriptorHeapHandleGpu(const uint32_t index, const uint32_t increment_size, const D3D12_GPU_DESCRIPTOR_HANDLE& head_addr_gpu) {
+  return D3D12_GPU_DESCRIPTOR_HANDLE{
+    .ptr = head_addr_gpu.ptr + increment_size * index,
+  };
+}
+auto GetDescriptorHandle(const uint32_t index, const DescriptorHandleHeapInfoFull& info) {
+  const auto handle_cpu = GetDescriptorHeapHandleCpu(index, info.descriptor_handle_increment_size, info.descriptor_head_addr_cpu);
+  const auto handle_gpu = GetDescriptorHeapHandleGpu(index, info.descriptor_handle_increment_size, info.descriptor_head_addr_gpu);
+  return std::make_pair(handle_cpu, handle_gpu);
 }
 }
 TEST_CASE("imgui") {
@@ -280,11 +300,8 @@ TEST_CASE("imgui") {
   REQUIRE_NE(device, nullptr);
   auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["shader_visible_buffer_num"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   REQUIRE_NE(descriptor_heap, nullptr);
-  const auto descriptor_handle_increment_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-  const auto descriptor_head_addr_cpu = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-  const auto descriptor_head_addr_gpu = descriptor_heap->GetGPUDescriptorHandleForHeapStart();
-  const auto imgui_font_handle_cpu = GetDescriptorHeapHandleCpu(0, descriptor_handle_increment_size, descriptor_head_addr_cpu);
-  const auto imgui_font_handle_gpu = GetDescriptorHeapHandleGpu(0, descriptor_handle_increment_size, descriptor_head_addr_gpu);
+  const auto descriptor_handle_heap_info_full = GetDescriptorHandleHeapInfoFull(descriptor_heap, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, device);
+  const auto [imgui_font_handle_cpu, imgui_font_handle_gpu] = GetDescriptorHandle(0, descriptor_handle_heap_info_full);
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
