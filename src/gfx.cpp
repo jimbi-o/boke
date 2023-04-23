@@ -314,6 +314,9 @@ TEST_CASE("imgui") {
                       descriptor_heap,
                       imgui_font_handle_cpu,
                       imgui_font_handle_gpu);
+  const uint32_t max_loop_num = json["max_loop_num"].GetUint();
+  for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
+  }
   descriptor_heap->Release();
   device->Release();
   TermDxgi(dxgi);

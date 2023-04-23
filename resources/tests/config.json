@@ -9,5 +9,6 @@
   },
   "descriptor_handles": {
     "shader_visible_buffer_num": 1024
-  }
+  },
+  "max_loop_num": 15
 }
