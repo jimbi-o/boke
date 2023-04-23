@@ -316,6 +316,16 @@ TEST_CASE("imgui") {
                       imgui_font_handle_gpu);
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
+    {
+      bool done = false;
+      MSG msg;
+      while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+        if (msg.message == WM_QUIT) { done = true; }
+      }
+      if (done) { break; }
+    }
   }
   descriptor_heap->Release();
   device->Release();
