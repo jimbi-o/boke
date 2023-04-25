@@ -451,7 +451,7 @@ TEST_CASE("imgui") {
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto json = GetJson("tests/config.json", allocator_data);
+  auto json = GetJson("tests/config-imgui.json", allocator_data);
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
   auto window_info = CreateWin32Window(json, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
