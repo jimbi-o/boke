@@ -21,6 +21,7 @@ namespace {
 using namespace boke;
 using D3d12Device = ID3D12Device10;
 using DxgiSwapchain = IDXGISwapChain4;
+using D3d12Fence = ID3D12Fence1;
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) { return true; }
@@ -229,6 +230,16 @@ auto CreateCommandQueue(D3d12Device* const device, const D3D12_COMMAND_LIST_TYPE
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return command_queue;
 }
+auto CreateFence(D3d12Device* const device) {
+  ID3D12Fence* fence_base{};
+  auto hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_base));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  D3d12Fence* fence{};
+  hr = fence_base->QueryInterface(IID_PPV_ARGS(&fence));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  fence_base->Release();
+  return fence;
+}
 auto DisableAltEnterFullscreen(HWND hwnd, IDXGIFactory7* factory) {
   const auto hr = factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
   if (FAILED(hr)) {
@@ -414,6 +425,26 @@ auto ProcessWindowMessages() {
   }
   return result;
 }
+auto WaitForSwapchain(HANDLE handle) {
+  const auto result = WaitForSingleObjectEx(handle, 1000, true);
+  switch (result) {
+    case WAIT_TIMEOUT: {
+      spdlog::error("wait timeout");
+      return false;
+    }
+    case WAIT_FAILED: {
+      spdlog::error("wait failed.");
+      return false;
+    }
+  }
+  return true;
+}
+auto WaitForFence(HANDLE fence_event, D3d12Fence* fence, const uint64_t fence_signal_val) {
+  const auto comp_val = fence->GetCompletedValue();
+  if (comp_val >= fence_signal_val) { return; }
+  const auto hr = fence->SetEventOnCompletion(fence_signal_val, fence_event);
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+}
 }
 TEST_CASE("imgui") {
   using namespace boke;
@@ -421,6 +452,7 @@ TEST_CASE("imgui") {
   std::byte main_buffer[main_buffer_size_in_bytes];
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   auto json = GetJson("tests/config.json", allocator_data);
+  const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
   auto window_info = CreateWin32Window(json, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi<AdapterType::kHighPerformance>(gfx_libraries.dxgi_library);
@@ -428,10 +460,18 @@ TEST_CASE("imgui") {
   REQUIRE_NE(device, nullptr);
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   REQUIRE_NE(command_queue, nullptr);
+  auto fence = CreateFence(device);
+  REQUIRE_NE(fence, nullptr);
+  auto fence_event = CreateEvent(nullptr, false, false, nullptr);
+  REQUIRE_NE(fence_event, nullptr);
+  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num, allocator_data);
+  std::fill(fence_signal_val_list, fence_signal_val_list + frame_buffer_num, 0);
+  uint64_t fence_signal_val = 0;
   const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
   const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetInt();
   auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_backbuffer_num);
   REQUIRE_NE(swapchain, nullptr);
+  auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
   auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["shader_visible_buffer_num"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   REQUIRE_NE(descriptor_heap, nullptr);
   const auto descriptor_handle_heap_info_full = GetDescriptorHandleHeapInfoFull(descriptor_heap, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, device);
@@ -451,6 +491,7 @@ TEST_CASE("imgui") {
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
+    const auto frame_index = frame_count % frame_buffer_num;
 #if 0
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -459,12 +500,21 @@ TEST_CASE("imgui") {
     ImGui::Render();
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list);
 #endif
+    if (!WaitForSwapchain(swapchain_latency_object)) { break; }
+    WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
+    // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
+    swapchain->Present(1, 0);
+    fence_signal_val++;
+    command_queue->Signal(fence, fence_signal_val);
+    fence_signal_val_list[frame_index] = fence_signal_val;
   }
+  WaitForFence(fence_event, fence, fence_signal_val);
   ImGui_ImplDX12_Shutdown();
   ImGui_ImplWin32_Shutdown();
   ImGui::DestroyContext();
   descriptor_heap->Release();
   swapchain->Release();
+  fence->Release();
   command_queue->Release();
   device->Release();
   TermDxgi(dxgi);
