@@ -279,9 +279,6 @@ auto CreateSwapchain(IDXGIFactory7* factory, ID3D12CommandQueue* command_queue, 
   return swapchain;
 #if 0
   // TODO
-  hr = swapchain_->SetMaximumFrameLatency(frame_buffer_num);
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  frame_latency_waitable_object_ = swapchain_->GetFrameLatencyWaitableObject();
   // get swapchain params
   {
     DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -471,6 +468,10 @@ TEST_CASE("imgui") {
   const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetInt();
   auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_backbuffer_num);
   REQUIRE_NE(swapchain, nullptr);
+  {
+    const auto hr = swapchain->SetMaximumFrameLatency(frame_buffer_num);
+    CHECK_UNARY(SUCCEEDED(hr));
+  }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
   auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["shader_visible_buffer_num"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   REQUIRE_NE(descriptor_heap, nullptr);
