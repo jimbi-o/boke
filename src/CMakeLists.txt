@@ -7,6 +7,7 @@ set(BOKE_EXTERNAL_FILES
   "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
+  d3d12_agility_sdk_version.cpp
 )
 source_group("External Files" FILES ${BOKE_EXTERNAL_FILES})
 if (BOKE_BUILD_TESTING)

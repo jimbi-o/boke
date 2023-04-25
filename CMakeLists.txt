@@ -38,6 +38,32 @@ CPMAddPackage(
 CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
 CPMAddPackage("gh:jimbi-o/tote#4780f32aaa425e3f2d9dd5927a4ef50463680255")
 CPMAddPackage("gh:ocornut/imgui#v1.89.5")
+CPMAddPackage(
+  NAME d3d12_agility
+  URL https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.700.10-preview
+  VERSION v1.700.10-preview
+  DOWNLOAD_ONLY yes
+)
+
+function(AddD3d12AgilitySDK APP_NAME)
+  add_custom_command(TARGET ${APP_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+    "$<TARGET_FILE_DIR:${APP_NAME}>/d3d12"
+  )
+  add_custom_command(TARGET ${APP_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${d3d12_agility_SOURCE_DIR}/build/native/bin/x64/D3D12Core.dll"
+    "$<$<CONFIG:Debug>:${d3d12_agility_SOURCE_DIR}/build/native/bin/x64/D3D12Core.pdb>"
+    "$<$<CONFIG:Debug>:${d3d12_agility_SOURCE_DIR}/build/native/bin/x64/d3d12SDKLayers.dll>"
+    "$<$<CONFIG:Debug>:${d3d12_agility_SOURCE_DIR}/build/native/bin/x64/d3d12SDKLayers.pdb>"
+    "$<TARGET_FILE_DIR:${APP_NAME}>/d3d12"
+  )
+endfunction()
+
+function(SetMSVCSettings APP_NAME)
+  set_directory_properties(PROPERTIES VS_STARTUP_PROJECT ${APP_NAME})
+  set_target_properties(${APP_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+endfunction()
 
 add_subdirectory(src)
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -45,13 +71,11 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   if (BOKE_BUILD_TESTING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_SUPER_FAST_ASSERTS)
     add_subdirectory(tests)
-    set_directory_properties(PROPERTIES VS_STARTUP_PROJECT test)
-    set_target_properties(test PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+    SetMSVCSettings(test)
   else()
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DOCTEST_CONFIG_DISABLE)
     add_subdirectory(apps)
-    set_directory_properties(PROPERTIES VS_STARTUP_PROJECT app)
-    set_target_properties(app PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+    SetMSVCSettings(app)
   endif()
 endif()
 
@@ -77,6 +101,7 @@ target_compile_definitions(${PROJECT_NAME}
   PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
   IMGUI_DEFINE_MATH_OPERATORS
+  USE_D3D12_AGILITY_SDK
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -91,6 +116,7 @@ target_include_directories(${PROJECT_NAME}
   "${spdlog_SOURCE_DIR}/include"
   "${doctest_SOURCE_DIR}"
   "${imgui_SOURCE_DIR}"
+  "${d3d12_agility_SOURCE_DIR}/build/native/include"
 )
 target_precompile_headers(${PROJECT_NAME}
   PUBLIC
@@ -101,4 +127,5 @@ target_precompile_headers(${PROJECT_NAME}
   "${foonathan_string_id_SOURCE_DIR}/string_id.hpp"
   "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
   "${imgui_SOURCE_DIR}/imgui.h"
+  "${d3d12_agility_SOURCE_DIR}/build/native/include/d3d12.h"
 )
