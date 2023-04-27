@@ -22,6 +22,8 @@ using namespace boke;
 using D3d12Device = ID3D12Device10;
 using DxgiSwapchain = IDXGISwapChain4;
 using D3d12Fence = ID3D12Fence1;
+using D3d12CommandAllocator = ID3D12CommandAllocator;
+using D3d12CommandList = ID3D12GraphicsCommandList7;
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) { return true; }
@@ -344,6 +346,26 @@ auto CreateSwapchain(IDXGIFactory7* factory, ID3D12CommandQueue* command_queue, 
   }
 #endif
 }
+auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
+  D3d12CommandAllocator* command_allocator = nullptr;
+  const auto hr = device->CreateCommandAllocator(type, IID_PPV_ARGS(&command_allocator));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return command_allocator;
+}
+auto CreateCommandList(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
+  D3d12CommandList* command_list = nullptr;
+  const auto hr = device->CreateCommandList1(0, type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&command_list));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return command_list;
+}
+auto StartCommandListRecording(D3d12CommandList* command_list, D3d12CommandAllocator* command_allocator) {
+  const auto hr = command_list->Reset(command_allocator, nullptr);
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+}
+auto EndCommandListRecording(D3d12CommandList* command_list) {
+  const auto hr = command_list->Close();
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+}
 auto GetDxgiFormat(const char* format) {
   if (strcmp(format, "R8G8B8A8_UNORM") == 0) {
     return DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -450,11 +472,13 @@ TEST_CASE("imgui") {
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   auto json = GetJson("tests/config-imgui.json", allocator_data);
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
+  // core units
   auto window_info = CreateWin32Window(json, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi<AdapterType::kHighPerformance>(gfx_libraries.dxgi_library);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   REQUIRE_NE(device, nullptr);
+  // command queue & fence
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   REQUIRE_NE(command_queue, nullptr);
   auto fence = CreateFence(device);
@@ -464,6 +488,7 @@ TEST_CASE("imgui") {
   auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num, allocator_data);
   std::fill(fence_signal_val_list, fence_signal_val_list + frame_buffer_num, 0);
   uint64_t fence_signal_val = 0;
+  // swapchain
   const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
   const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetInt();
   auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_backbuffer_num);
@@ -473,9 +498,18 @@ TEST_CASE("imgui") {
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
+  // command allocator & list
+  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
+  for (uint32_t i = 0; i < frame_buffer_num; i++) {
+    command_allocator[i] = CreateCommandAllocator(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+  }
+  auto command_list = CreateCommandList(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+  REQUIRE_NE(command_list, nullptr);
+  // descriptor_head
   auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["shader_visible_buffer_num"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   REQUIRE_NE(descriptor_heap, nullptr);
   const auto descriptor_handle_heap_info_full = GetDescriptorHandleHeapInfoFull(descriptor_heap, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, device);
+  // imgui
   const auto [imgui_font_handle_cpu, imgui_font_handle_gpu] = GetDescriptorHandle(0, descriptor_handle_heap_info_full);
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -489,6 +523,7 @@ TEST_CASE("imgui") {
                       descriptor_heap,
                       imgui_font_handle_cpu,
                       imgui_font_handle_gpu);
+  // frame start
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
@@ -503,6 +538,9 @@ TEST_CASE("imgui") {
 #endif
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
+    StartCommandListRecording(command_list, command_allocator[frame_index]);
+    EndCommandListRecording(command_list);
+    command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
     swapchain->Present(1, 0);
     fence_signal_val++;
@@ -514,6 +552,11 @@ TEST_CASE("imgui") {
   ImGui_ImplWin32_Shutdown();
   ImGui::DestroyContext();
   descriptor_heap->Release();
+  command_list->Release();
+  for (uint32_t i = 0; i < frame_buffer_num; i++) {
+    command_allocator[i]->Release();
+  }
+  Deallocate(command_allocator, allocator_data);
   swapchain->Release();
   fence->Release();
   command_queue->Release();
