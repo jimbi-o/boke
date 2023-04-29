@@ -135,4 +135,5 @@ target_precompile_headers(${PROJECT_NAME}
   "${RapidJSON_SOURCE_DIR}/include/rapidjson/document.h"
   "${imgui_SOURCE_DIR}/imgui.h"
   "${d3d12_agility_SOURCE_DIR}/build/native/include/d3d12.h"
+  "${d3d12_agility_SOURCE_DIR}/build/native/include/d3d12sdklayers.h"
 )

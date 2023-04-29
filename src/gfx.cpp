@@ -7,8 +7,10 @@
 #ifndef NDEBUG
 #include "d3d12sdklayers.h"
 #endif
+#include <D3D12MemAlloc.h>
 #include "boke/allocator.h"
 #include "boke/debug_assert.h"
+#include "boke/util.h"
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx12.h"
@@ -21,13 +23,14 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #define ENABLE_GPU_VALIDATION
 namespace {
 using namespace boke;
+using DxgiFactory = IDXGIFactory7;
+using DxgiAdapter = IDXGIAdapter4;
 using D3d12Device = ID3D12Device10;
 using DxgiSwapchain = IDXGISwapChain4;
 using D3d12Fence = ID3D12Fence1;
 using D3d12CommandAllocator = ID3D12CommandAllocator;
 using D3d12CommandList = ID3D12GraphicsCommandList7;
-LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) { return true; }
   switch (msg) {
     case WM_SIZE: {
@@ -109,17 +112,17 @@ auto ReleaseGfxLibraries(GfxLibraries& libraries) {
   FreeLibrary(libraries.dxgi_library);
 }
 struct DxgiCore {
-  IDXGIFactory7* factory{};
-  IDXGIAdapter4* adapter{};
+  DxgiFactory* factory{};
+  DxgiAdapter* adapter{};
 };
 enum AdapterType : uint8_t { kHighPerformance, kWarp, };
 template <AdapterType adapter_type>
 auto InitDxgi(HMODULE library) {
   SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-  IDXGIFactory7* factory = nullptr;
+  DxgiFactory* factory = nullptr;
   auto hr = CALL_DLL_FUNCTION(library, CreateDXGIFactory2)(0, IID_PPV_ARGS(&factory));
   DEBUG_ASSERT(SUCCEEDED(hr) && factory, DebugAssert{});
-  IDXGIAdapter4* adapter = nullptr;
+  DxgiAdapter* adapter = nullptr;
   if constexpr (adapter_type == AdapterType::kWarp) {
     hr = factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter));
   } else {
@@ -130,7 +133,7 @@ auto InitDxgi(HMODULE library) {
     DXGI_ADAPTER_DESC1 desc;
     adapter->GetDesc1(&desc);
     if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-      spdlog::info("IDXGIAdapter4 is software");
+      spdlog::info("DxgiAdapter is software");
     }
   }
   return DxgiCore {
@@ -148,7 +151,7 @@ auto TermDxgi(DxgiCore& dxgi) {
     spdlog::error("factory reference left. {}", refval);
   }
 }
-auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
+auto CreateDevice(HMODULE library, DxgiAdapter* adapter) {
 #if !defined(NDEBUG) && defined(ENABLE_GPU_VALIDATION)
   if (IsDebuggerPresent()) {
     ID3D12Debug* debug_interface = nullptr;
@@ -245,13 +248,13 @@ auto CreateFence(D3d12Device* const device) {
   fence_base->Release();
   return fence;
 }
-auto DisableAltEnterFullscreen(HWND hwnd, IDXGIFactory7* factory) {
+auto DisableAltEnterFullscreen(HWND hwnd, DxgiFactory* factory) {
   const auto hr = factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
   if (FAILED(hr)) {
     spdlog::warn("DisableAltEnterFullscreen failed. {}", hr);
   }
 }
-auto IsVariableRefreshRateSupported(IDXGIFactory7* factory) {
+auto IsVariableRefreshRateSupported(DxgiFactory* factory) {
   BOOL result = false;
   const auto hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &result, sizeof(result));
   if (FAILED(hr)) {
@@ -259,7 +262,7 @@ auto IsVariableRefreshRateSupported(IDXGIFactory7* factory) {
   }
   return static_cast<bool>(result);
 }
-auto CreateSwapchain(IDXGIFactory7* factory, ID3D12CommandQueue* command_queue, HWND hwnd, const DXGI_FORMAT format, const uint32_t backbuffer_num) {
+auto CreateSwapchain(DxgiFactory* factory, ID3D12CommandQueue* command_queue, HWND hwnd, const DXGI_FORMAT format, const uint32_t backbuffer_num) {
   DXGI_SWAP_CHAIN_DESC1 desc = {};
   desc.Width = desc.Height = 0; // get value from hwnd
   desc.Format = format;
@@ -312,6 +315,31 @@ auto SetD3d12NameToList(ID3D12Object** list, const uint32_t num, const wchar_t* 
     swprintf(name, name_len, L"%s%d", basename, i);
     list[i]->SetName(name);
   }
+}
+void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_data) {
+  return Allocate(GetUint32(size), GetUint32(alignment), static_cast<AllocatorData*>(private_data));
+}
+void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
+  Deallocate(ptr, static_cast<AllocatorData*>(private_data));
+}
+auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
+  using namespace D3D12MA;
+  ALLOCATION_CALLBACKS allocation_callbacks{
+    .pAllocate = GpuMemoryAllocatorAllocate,
+    .pFree = GpuMemoryAllocatorDeallocate,
+    .pPrivateData = allocator_data,
+  };
+  ALLOCATOR_DESC allocatorDesc{
+    .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
+    .pDevice = device,
+    .PreferredBlockSize = 0,
+    .pAllocationCallbacks = &allocation_callbacks,
+    .pAdapter = adapter,
+  };
+  Allocator* allocator;
+  const auto hr = CreateAllocator(&allocatorDesc, &allocator);
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocator;
 }
 auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
   D3d12CommandAllocator* command_allocator = nullptr;
@@ -497,6 +525,9 @@ TEST_CASE("imgui") {
       device->CreateRenderTargetView(swapchain_resources[i], &rtv_desc, swapchain_rtv[i]);
     }
   }
+  // resources
+  auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
+  REQUIRE_NE(gpu_memory_allocator, nullptr);
   // command allocator & list
   auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
@@ -505,7 +536,7 @@ TEST_CASE("imgui") {
   }
   auto command_list = CreateCommandList(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
   REQUIRE_NE(command_list, nullptr);
-  // descriptor_head
+  // descriptor heap
   auto descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, json["descriptor_handles"]["shader_visible_buffer_num"].GetUint(), D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   REQUIRE_NE(descriptor_heap, nullptr);
   const auto descriptor_handle_heap_info_full = GetDescriptorHandleHeapInfoFull(descriptor_heap, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, device);
@@ -615,6 +646,7 @@ TEST_CASE("imgui") {
   }
   Deallocate(command_allocator, allocator_data);
   descriptor_heap_rtv->Release();
+  gpu_memory_allocator->Release();
   for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
     swapchain_resources[i]->Release();
   }
