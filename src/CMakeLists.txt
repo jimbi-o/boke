@@ -8,6 +8,8 @@ set(BOKE_EXTERNAL_FILES
   "${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
   d3d12_agility_sdk_version.cpp
+  "${D3D12MemoryAllocator_SOURCE_DIR}/include/D3D12MemAlloc.h"
+  "${D3D12MemoryAllocator_SOURCE_DIR}/src/D3D12MemAlloc.cpp"
 )
 if (BOKE_BUILD_TESTING)
   list(APPEND BOKE_EXTERNAL_FILES "${imgui_SOURCE_DIR}/imgui_demo.cpp")

@@ -44,6 +44,12 @@ CPMAddPackage(
   VERSION v1.700.10-preview
   DOWNLOAD_ONLY yes
 )
+CPMAddPackage(
+  NAME D3D12MemoryAllocator
+  GITHUB_REPOSITORY "GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator"
+  GIT_TAG "2e5ccb114be605386fee66ccfc66d4acf48bc62b"
+  DOWNLOAD_ONLY yes
+)
 
 function(AddD3d12AgilitySDK APP_NAME)
   add_custom_command(TARGET ${APP_NAME} POST_BUILD
@@ -117,6 +123,7 @@ target_include_directories(${PROJECT_NAME}
   "${doctest_SOURCE_DIR}"
   "${imgui_SOURCE_DIR}"
   "${d3d12_agility_SOURCE_DIR}/build/native/include"
+  "${D3D12MemoryAllocator_SOURCE_DIR}/include"
 )
 target_precompile_headers(${PROJECT_NAME}
   PUBLIC
