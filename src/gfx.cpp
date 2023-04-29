@@ -1,3 +1,4 @@
+#include <wchar.h>
 #include <Windows.h>
 #include "dxgi1_6.h"
 #ifndef NDEBUG
@@ -17,6 +18,7 @@
 #define CALL_DLL_FUNCTION(library, function) reinterpret_cast<decltype(&function)>(GetProcAddress(library, #function))
 #define LOAD_DLL_FUNCTION(library, function) decltype(&function) function = reinterpret_cast<decltype(function)>(GetProcAddress(library, #function))
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// #define ENABLE_GPU_VALIDATION
 namespace {
 using namespace boke;
 using D3d12Device = ID3D12Device10;
@@ -147,17 +149,18 @@ auto TermDxgi(DxgiCore& dxgi) {
   }
 }
 auto CreateDevice(HMODULE library, IDXGIAdapter4* adapter) {
-#ifndef NDEBUG
+#if !defined(NDEBUG) && defined(ENABLE_GPU_VALIDATION)
   if (IsDebuggerPresent()) {
     ID3D12Debug* debug_interface = nullptr;
     if (SUCCEEDED(CALL_DLL_FUNCTION(library, D3D12GetDebugInterface)(IID_PPV_ARGS(&debug_interface)))) {
       debug_interface->EnableDebugLayer();
       spdlog::info("EnableDebugLayer");
-      ID3D12Debug1* debug_interface1 = nullptr;
-      if (SUCCEEDED(debug_interface->QueryInterface(IID_PPV_ARGS(&debug_interface1)))) {
-        debug_interface1->SetEnableGPUBasedValidation(true);
+      ID3D12Debug6* debug_interface6 = nullptr;
+      if (SUCCEEDED(debug_interface->QueryInterface(IID_PPV_ARGS(&debug_interface6)))) {
+        debug_interface6->SetEnableGPUBasedValidation(true);
+        debug_interface6->SetForceLegacyBarrierValidation(false);
         spdlog::info("SetEnableGPUBasedValidation");
-        debug_interface1->Release();
+        debug_interface6->Release();
       }
       debug_interface->Release();
     }
@@ -346,6 +349,20 @@ auto CreateSwapchain(IDXGIFactory7* factory, ID3D12CommandQueue* command_queue, 
   }
 #endif
 }
+auto GetSwapchainBuffer(DxgiSwapchain* swapchain, const uint32_t index) {
+  ID3D12Resource* resource = nullptr;
+  const auto hr = swapchain->GetBuffer(index, IID_PPV_ARGS(&resource));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return resource;
+}
+auto SetD3d12NameToList(ID3D12Object** list, const uint32_t num, const wchar_t* basename) {
+  const uint32_t name_len = 64;
+  wchar_t name[name_len];
+  for (uint32_t i = 0; i < num; i++) {
+    swprintf(name, name_len, L"%s%d", basename, i);
+    list[i]->SetName(name);
+  }
+}
 auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
   D3d12CommandAllocator* command_allocator = nullptr;
   const auto hr = device->CreateCommandAllocator(type, IID_PPV_ARGS(&command_allocator));
@@ -400,6 +417,18 @@ auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE 
   auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return descriptor_heap;
+}
+struct DescriptorHandleHeapInfoCpu {
+  D3D12_CPU_DESCRIPTOR_HANDLE descriptor_head_addr_cpu{};
+  uint32_t descriptor_handle_increment_size{};
+};
+auto GetDescriptorHandleHeapInfoCpu(ID3D12DescriptorHeap* descriptor_heap, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, D3d12Device* device) {
+  const auto descriptor_head_addr_cpu = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+  const auto descriptor_handle_increment_size = device->GetDescriptorHandleIncrementSize(descriptor_heap_type);
+  return DescriptorHandleHeapInfoCpu {
+    .descriptor_head_addr_cpu = descriptor_head_addr_cpu,
+    .descriptor_handle_increment_size = descriptor_handle_increment_size,
+  };
 }
 struct DescriptorHandleHeapInfoFull {
   D3D12_CPU_DESCRIPTOR_HANDLE descriptor_head_addr_cpu{};
@@ -490,7 +519,7 @@ TEST_CASE("imgui") {
   uint64_t fence_signal_val = 0;
   // swapchain
   const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
-  const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetInt();
+  const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetUint();
   auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_backbuffer_num);
   REQUIRE_NE(swapchain, nullptr);
   {
@@ -498,10 +527,31 @@ TEST_CASE("imgui") {
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
+  auto swapchain_rtv = AllocateArray<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_backbuffer_num, allocator_data);
+  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_backbuffer_num, allocator_data);
+  for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+    swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
+    REQUIRE_NE(swapchain_resources[i], nullptr);
+  }
+  SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_backbuffer_num, L"swapchain");
+  auto descriptor_heap_rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, swapchain_backbuffer_num, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+  {
+    const auto descriptor_handle_heap_info_cpu = GetDescriptorHandleHeapInfoCpu(descriptor_heap_rtv, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, device);
+    const D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {
+      .Format = swapchain_format,
+      .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+      .Texture2D = {},
+    };
+    for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+      swapchain_rtv[i] = GetDescriptorHeapHandleCpu(i, descriptor_handle_heap_info_cpu.descriptor_handle_increment_size, descriptor_handle_heap_info_cpu.descriptor_head_addr_cpu);
+      device->CreateRenderTargetView(swapchain_resources[i], &rtv_desc, swapchain_rtv[i]);
+    }
+  }
   // command allocator & list
   auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
     command_allocator[i] = CreateCommandAllocator(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    REQUIRE_NE(command_allocator[i], nullptr);
   }
   auto command_list = CreateCommandList(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
   REQUIRE_NE(command_list, nullptr);
@@ -538,7 +588,64 @@ TEST_CASE("imgui") {
 #endif
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
+    const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     StartCommandListRecording(command_list, command_allocator[frame_index]);
+    {
+      D3D12_TEXTURE_BARRIER barrier {
+        .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+        .SyncAfter  = D3D12_BARRIER_SYNC_RENDER_TARGET,
+        .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+        .AccessAfter  = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+        .LayoutBefore = D3D12_BARRIER_LAYOUT_PRESENT,
+        .LayoutAfter  = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+        .pResource = swapchain_resources[swapchain_backbuffer_index],
+        .Subresources = {
+          .IndexOrFirstMipLevel = 0xffffffff,
+          .NumMipLevels = 0,
+          .FirstArraySlice = 0,
+          .NumArraySlices = 0,
+          .FirstPlane = 0,
+          .NumPlanes = 0,
+        },
+        .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+      };
+      D3D12_BARRIER_GROUP barrier_group {
+        .Type = D3D12_BARRIER_TYPE_TEXTURE,
+        .NumBarriers = 1,
+        .pTextureBarriers = &barrier,
+      };
+      command_list->Barrier(1, &barrier_group);
+    }
+    {
+      const FLOAT clear_color[] = {1.0f, 1.0f, 1.0f, 1.0f,};
+      command_list->ClearRenderTargetView(swapchain_rtv[swapchain_backbuffer_index], clear_color, 0, nullptr);
+    }
+    {
+      D3D12_TEXTURE_BARRIER barrier {
+        .SyncBefore = D3D12_BARRIER_SYNC_RENDER_TARGET,
+        .SyncAfter  = D3D12_BARRIER_SYNC_NONE,
+        .AccessBefore = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+        .AccessAfter  = D3D12_BARRIER_ACCESS_NO_ACCESS,
+        .LayoutBefore = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+        .LayoutAfter  = D3D12_BARRIER_LAYOUT_PRESENT,
+        .pResource = swapchain_resources[swapchain_backbuffer_index],
+        .Subresources = {
+          .IndexOrFirstMipLevel = 0xffffffff,
+          .NumMipLevels = 0,
+          .FirstArraySlice = 0,
+          .NumArraySlices = 0,
+          .FirstPlane = 0,
+          .NumPlanes = 0,
+        },
+        .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+      };
+      D3D12_BARRIER_GROUP barrier_group {
+        .Type = D3D12_BARRIER_TYPE_TEXTURE,
+        .NumBarriers = 1,
+        .pTextureBarriers = &barrier,
+      };
+      command_list->Barrier(1, &barrier_group);
+    }
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
@@ -557,6 +664,10 @@ TEST_CASE("imgui") {
     command_allocator[i]->Release();
   }
   Deallocate(command_allocator, allocator_data);
+  descriptor_heap_rtv->Release();
+  for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+    swapchain_resources[i]->Release();
+  }
   swapchain->Release();
   fence->Release();
   command_queue->Release();
