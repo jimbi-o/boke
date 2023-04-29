@@ -341,7 +341,13 @@ auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, Allocat
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocator;
 }
-auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
+auto CreateTexture2d(D3D12MA::Allocator* allocator,
+                     const Size2d& size,
+                     const DXGI_FORMAT format,
+                     const D3D12_RESOURCE_FLAGS flags,
+                     const D3D12_BARRIER_LAYOUT layout,
+                     const D3D12_CLEAR_VALUE* clear_value,
+                     const uint32_t castable_format_num, DXGI_FORMAT* castable_formats) {
   using namespace D3D12MA;
   D3D12_RESOURCE_DESC1 resource_desc{
     .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
@@ -356,26 +362,47 @@ auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const
       .Quality = 0,
     },
     .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-    .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+    .Flags = flags,
   };
   D3D12MA::ALLOCATION_DESC allocation_desc{
     .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-  };
-  D3D12_CLEAR_VALUE clear_value{
-    .Format = format,
-    .Color = {},
   };
   D3D12MA::Allocation* allocation{};
   const auto hr = allocator->CreateResource3(
       &allocation_desc,
       &resource_desc,
-      D3D12_BARRIER_LAYOUT_RENDER_TARGET,
-      &clear_value,
-      0, nullptr, // castable dxgi formats
+      layout,
+      clear_value,
+      castable_format_num, castable_formats,
       &allocation,
       IID_NULL, nullptr); // pointer to resource
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocation;
+}
+auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
+  D3D12_CLEAR_VALUE clear_value{
+    .Format = format,
+    .Color = {},
+  };
+  return CreateTexture2d(allocator, size, format,
+                         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+                         D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+                         &clear_value,
+                         0, nullptr);
+}
+auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
+  D3D12_CLEAR_VALUE clear_value{
+    .Format = format,
+    .DepthStencil = {
+      .Depth = 1.0f, // set 0.0f for inverse-z
+      .Stencil = 0,
+    },
+  };
+  return CreateTexture2d(allocator, size, format,
+                         D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
+                         D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
+                         &clear_value,
+                         0, nullptr);
 }
 auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
   D3d12CommandAllocator* command_allocator = nullptr;
@@ -750,7 +777,10 @@ TEST_CASE("multiple render pass") {
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
   REQUIRE_NE(gpu_memory_allocator, nullptr);
   StrHashMap<D3D12MA::Allocation*> resources(GetAllocatorCallbacks(allocator_data));
-  resources["gbuffer0"_id] = CreateTexture2dRtv(gpu_memory_allocator, swapchain_size, swapchain_format);
+  resources["gbuffer0"_id] = CreateTexture2dRtv(gpu_memory_allocator, swapchain_size, DXGI_FORMAT_R8G8B8A8_UNORM);
+  resources["gbuffer1"_id] = CreateTexture2dRtv(gpu_memory_allocator, swapchain_size, DXGI_FORMAT_R8G8B8A8_UNORM);
+  resources["gbuffer2"_id] = CreateTexture2dRtv(gpu_memory_allocator, swapchain_size, DXGI_FORMAT_R8G8B8A8_UNORM);
+  resources["depth"_id] = CreateTexture2dDsv(gpu_memory_allocator, swapchain_size, DXGI_FORMAT_D32_FLOAT);
   // command allocator & list
   auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
