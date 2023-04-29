@@ -11,6 +11,7 @@
 #include "boke/allocator.h"
 #include "boke/container.h"
 #include "boke/debug_assert.h"
+#include "boke/str_hash.h"
 #include "boke/util.h"
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
@@ -22,6 +23,7 @@
 #define LOAD_DLL_FUNCTION(library, function) decltype(&function) function = reinterpret_cast<decltype(function)>(GetProcAddress(library, #function))
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #define ENABLE_GPU_VALIDATION
+#define SKIP_GPU_COMMAND_RECORDING
 namespace {
 using namespace boke;
 struct Size2d {
@@ -339,6 +341,42 @@ auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, Allocat
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocator;
 }
+auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
+  using namespace D3D12MA;
+  D3D12_RESOURCE_DESC1 resource_desc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    .Alignment = 0,
+    .Width = size.width,
+    .Height = size.height,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = format,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0,
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+  };
+  D3D12MA::ALLOCATION_DESC allocation_desc{
+    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
+  };
+  D3D12_CLEAR_VALUE clear_value{
+    .Format = format,
+    .Color = {},
+  };
+  D3D12MA::Allocation* allocation{};
+  const auto hr = allocator->CreateResource3(
+      &allocation_desc,
+      &resource_desc,
+      D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+      &clear_value,
+      0, nullptr, // castable dxgi formats
+      &allocation,
+      IID_NULL, nullptr); // pointer to resource
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocation;
+}
 auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
   D3d12CommandAllocator* command_allocator = nullptr;
   const auto hr = device->CreateCommandAllocator(type, IID_PPV_ARGS(&command_allocator));
@@ -654,8 +692,8 @@ TEST_CASE("imgui") {
 }
 TEST_CASE("multiple render pass") {
   using namespace boke;
-  const uint32_t main_buffer_size_in_bytes = 16 * 1024;
-  std::byte main_buffer[main_buffer_size_in_bytes];
+  const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
+  auto main_buffer = new std::byte[main_buffer_size_in_bytes];
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
   auto json = GetJson("tests/config-multipass.json", allocator_data);
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
@@ -711,7 +749,8 @@ TEST_CASE("multiple render pass") {
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
   REQUIRE_NE(gpu_memory_allocator, nullptr);
-  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<D3D12MA::Allocation*> resources(GetAllocatorCallbacks(allocator_data));
+  resources["gbuffer0"_id] = CreateTexture2dRtv(gpu_memory_allocator, swapchain_size, swapchain_format);
   // command allocator & list
   auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
@@ -751,6 +790,7 @@ TEST_CASE("multiple render pass") {
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     StartCommandListRecording(command_list, command_allocator[frame_index]);
+#if !defined(SKIP_GPU_COMMAND_RECORDING)
     {
       D3D12_TEXTURE_BARRIER barrier {
         .SyncBefore = D3D12_BARRIER_SYNC_NONE,
@@ -810,6 +850,7 @@ TEST_CASE("multiple render pass") {
       };
       command_list->Barrier(1, &barrier_group);
     }
+#endif
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
@@ -829,7 +870,8 @@ TEST_CASE("multiple render pass") {
   }
   Deallocate(command_allocator, allocator_data);
   descriptor_heap_rtv->Release();
-  resources.iterate([](const StrHash, ID3D12Resource** resource) {(*resource)->Release();});
+  resources.iterate([](const StrHash, D3D12MA::Allocation** allocation) {(*allocation)->Release();});
+  resources.~HashMap();
   gpu_memory_allocator->Release();
   for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
     swapchain_resources[i]->Release();
@@ -841,4 +883,5 @@ TEST_CASE("multiple render pass") {
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   ReleaseWin32Window(window_info, allocator_data);
+  delete[] main_buffer;
 }

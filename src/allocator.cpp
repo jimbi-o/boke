@@ -27,6 +27,8 @@ void* Allocate(const uint32_t size, const uint32_t min_alignment, AllocatorData*
 
   const auto total_size = size + alignment + sizeof(OffsetAllocator::NodeIndex);
   const auto allocation = allocator_data->offset_allocator->allocate(GetUint32(total_size));
+  DEBUG_ASSERT(allocation.offset != OffsetAllocator::Allocation::NO_SPACE, DebugAssert());
+  DEBUG_ASSERT(allocation.metadata != OffsetAllocator::Allocation::NO_SPACE, DebugAssert());
 
   const auto ptr_val = allocator_data->head_addr + allocation.offset;
   auto aligned_ptr_val = Align(ptr_val, alignment);
