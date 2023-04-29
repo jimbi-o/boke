@@ -297,56 +297,6 @@ auto CreateSwapchain(IDXGIFactory7* factory, ID3D12CommandQueue* command_queue, 
       swapchain_buffer_num_ = desc.BufferCount;
     }
   }
-  // get swapchain resource buffers for rtv
-  {
-    resources_ = AllocateArraySystem<ID3D12Resource*>(swapchain_buffer_num_);
-    for (uint32_t i = 0; i < swapchain_buffer_num_; i++) {
-      ID3D12Resource* resource = nullptr;
-      auto hr = swapchain_->GetBuffer(i, IID_PPV_ARGS(&resource));
-      if (FAILED(hr)) {
-        spdlog::error("swapchain_->GetBuffer failed. {} {}", i, hr);
-        assert(false && "swapchain_->GetBuffer failed.");
-        for (uint32_t j = 0; j < i; j++) {
-          resources_[i]->Release();
-        }
-        for (uint32_t j = 0; j < swapchain_buffer_num_; j++) {
-          resources_[i] = nullptr;
-        }
-        return false;
-      }
-      resources_[i] = resource;
-      SetD3d12Name(resources_[i], "swapchain" + std::to_string(i));
-    }
-  }
-  // prepare rtv
-  {
-    D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc {
-      .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-      .NumDescriptors = swapchain_buffer_num_,
-      .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-      .NodeMask = 0
-    };
-    auto hr = device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&descriptor_heap_));
-    if (FAILED(hr)) {
-      spdlog::error("swapchain CreateDescriptorHeap failed. {} {}", hr, swapchain_buffer_num_);
-      assert(false && "swapchain CreateDescriptorHeap failed.");
-      return false;
-    }
-    descriptor_heap_->SetName(L"swapchain descriptor heap");
-    const D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {
-      .Format = format_,
-      .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-      .Texture2D = {},
-    };
-    auto rtv_handle = descriptor_heap_->GetCPUDescriptorHandleForHeapStart();
-    auto rtv_step_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    cpu_handles_rtv_ = AllocateArraySystem<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_buffer_num_);
-    for (uint32_t i = 0; i < swapchain_buffer_num_; i++) {
-      device->CreateRenderTargetView(resources_[i], &rtv_desc, rtv_handle);
-      cpu_handles_rtv_[i] = rtv_handle;
-      rtv_handle.ptr += rtv_step_size;
-    }
-  }
 #endif
 }
 auto GetSwapchainBuffer(DxgiSwapchain* swapchain, const uint32_t index) {
