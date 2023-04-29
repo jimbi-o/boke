@@ -9,6 +9,9 @@ set(BOKE_EXTERNAL_FILES
   "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
   d3d12_agility_sdk_version.cpp
 )
+if (BOKE_BUILD_TESTING)
+  list(APPEND BOKE_EXTERNAL_FILES "${imgui_SOURCE_DIR}/imgui_demo.cpp")
+endif()
 source_group("External Files" FILES ${BOKE_EXTERNAL_FILES})
 if (BOKE_BUILD_TESTING)
   add_library(${PROJECT_NAME} OBJECT)

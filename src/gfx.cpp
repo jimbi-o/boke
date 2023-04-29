@@ -18,7 +18,7 @@
 #define CALL_DLL_FUNCTION(library, function) reinterpret_cast<decltype(&function)>(GetProcAddress(library, #function))
 #define LOAD_DLL_FUNCTION(library, function) decltype(&function) function = reinterpret_cast<decltype(function)>(GetProcAddress(library, #function))
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-// #define ENABLE_GPU_VALIDATION
+#define ENABLE_GPU_VALIDATION
 namespace {
 using namespace boke;
 using D3d12Device = ID3D12Device10;
@@ -528,14 +528,11 @@ TEST_CASE("imgui") {
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
-#if 0
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     ImGui::ShowDemoWindow();
     ImGui::Render();
-    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list);
-#endif
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
@@ -567,8 +564,11 @@ TEST_CASE("imgui") {
       command_list->Barrier(1, &barrier_group);
     }
     {
-      const FLOAT clear_color[] = {1.0f, 1.0f, 1.0f, 1.0f,};
+      const FLOAT clear_color[] = {0.0f, 0.0f, 0.0f, 0.0f,};
       command_list->ClearRenderTargetView(swapchain_rtv[swapchain_backbuffer_index], clear_color, 0, nullptr);
+      command_list->OMSetRenderTargets(1, &swapchain_rtv[swapchain_backbuffer_index], false, nullptr);
+      command_list->SetDescriptorHeaps(1, &descriptor_heap);
+      ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list);
     }
     {
       D3D12_TEXTURE_BARRIER barrier {
