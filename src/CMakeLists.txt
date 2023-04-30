@@ -7,7 +7,7 @@ set(BOKE_EXTERNAL_FILES
   "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
-  d3d12_agility_sdk_version.cpp
+  gfx/d3d12_agility_sdk_version.cpp
   "${D3D12MemoryAllocator_SOURCE_DIR}/include/D3D12MemAlloc.h"
   "${D3D12MemoryAllocator_SOURCE_DIR}/src/D3D12MemAlloc.cpp"
 )
@@ -29,6 +29,6 @@ target_sources(${PROJECT_NAME}
   str_hash.cpp
   framework.cpp
   json.cpp
-  gfx.cpp
   string_util.cpp
+  gfx/gfx.cpp
 )

@@ -124,6 +124,8 @@ target_include_directories(${PROJECT_NAME}
   "${imgui_SOURCE_DIR}"
   "${d3d12_agility_SOURCE_DIR}/build/native/include"
   "${D3D12MemoryAllocator_SOURCE_DIR}/include"
+  private
+  "src"
 )
 target_precompile_headers(${PROJECT_NAME}
   PUBLIC
