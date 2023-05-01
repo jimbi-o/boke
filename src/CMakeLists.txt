@@ -15,6 +15,13 @@ if (BOKE_BUILD_TESTING)
   list(APPEND BOKE_EXTERNAL_FILES "${imgui_SOURCE_DIR}/imgui_demo.cpp")
 endif()
 source_group("External Files" FILES ${BOKE_EXTERNAL_FILES})
+
+set(BOKE_SRC_FILES
+  gfx/gfx.cpp
+  gfx/barrier_config.cpp
+)
+source_group("Source Files (gfx)" FILES ${BOKE_SRC_FILES})
+
 if (BOKE_BUILD_TESTING)
   add_library(${PROJECT_NAME} OBJECT)
 else()
@@ -23,6 +30,7 @@ endif()
 target_sources(${PROJECT_NAME}
   PRIVATE
   ${BOKE_EXTERNAL_FILES}
+  ${BOKE_SRC_FILES}
   allocator.cpp
   container.cpp
   util.cpp
@@ -30,5 +38,4 @@ target_sources(${PROJECT_NAME}
   framework.cpp
   json.cpp
   string_util.cpp
-  gfx/gfx.cpp
 )
