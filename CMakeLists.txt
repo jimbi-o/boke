@@ -36,7 +36,7 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
-CPMAddPackage("gh:jimbi-o/tote#f3c2f338e17592dffd3fde00c12852c3218ac0a4")
+CPMAddPackage("gh:jimbi-o/tote#442826dc7ca5c9adedb02d2115b70d7c4c65f45f")
 CPMAddPackage("gh:ocornut/imgui#v1.89.5")
 CPMAddPackage(
   NAME d3d12_agility
