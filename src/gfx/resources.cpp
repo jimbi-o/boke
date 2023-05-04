@@ -9,7 +9,22 @@
 #include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
+namespace boke {
+enum class ResourceCreationType : uint8_t {
+  kNone,
+  kRtv,
+  kDsv,
+};
+struct ResourceInfo {
+  ResourceCreationType creation_type{};
+  D3D12_RESOURCE_FLAGS flags{};
+  DXGI_FORMAT format{};
+  Size2d size{};
+  bool pingpong{};
+};
+} // namespace boke
 namespace {
+using namespace boke;
 void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_data) {
   return boke::Allocate(boke::GetUint32(size), boke::GetUint32(alignment), static_cast<boke::AllocatorData*>(private_data));
 }
@@ -31,20 +46,99 @@ auto HashInteger(const uint64_t x) {
   hash += (hash << 15);
   return hash;
 }
+auto CreateTexture2d(D3D12MA::Allocator* allocator,
+                     const Size2d& size,
+                     const DXGI_FORMAT format,
+                     const D3D12_RESOURCE_FLAGS flags,
+                     const D3D12_BARRIER_LAYOUT layout,
+                     const D3D12_CLEAR_VALUE* clear_value,
+                     const uint32_t castable_format_num, DXGI_FORMAT* castable_formats) {
+  using namespace D3D12MA;
+  D3D12_RESOURCE_DESC1 resource_desc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    .Alignment = 0,
+    .Width = size.width,
+    .Height = size.height,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = format,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0,
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    .Flags = flags,
+  };
+  D3D12MA::ALLOCATION_DESC allocation_desc{
+    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
+  };
+  D3D12MA::Allocation* allocation{};
+  const auto hr = allocator->CreateResource3(
+      &allocation_desc,
+      &resource_desc,
+      layout,
+      clear_value,
+      castable_format_num, castable_formats,
+      &allocation,
+      IID_NULL, nullptr); // pointer to resource
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocation;
+}
+auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
+  D3D12_CLEAR_VALUE clear_value{
+    .Format = format,
+    .Color = {},
+  };
+  return CreateTexture2d(allocator, size, format,
+                         flags,
+                         D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+                         &clear_value,
+                         0, nullptr);
+}
+auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
+  D3D12_CLEAR_VALUE clear_value{
+    .Format = format,
+    .DepthStencil = {
+      .Depth = 1.0f, // set 0.0f for inverse-z
+      .Stencil = 0,
+    },
+  };
+  return CreateTexture2d(allocator, size, format,
+                         flags,
+                         D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
+                         &clear_value,
+                         0, nullptr);
+}
+struct ResourceCreationAsset {
+  D3D12MA::Allocator* allocator{};
+  StrHashMap<D3D12MA::Allocation*>* allocations{};
+};
+void CreateResourceImpl(ResourceCreationAsset* resource_creation_asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+  switch (resource_info->creation_type) {
+    case ResourceCreationType::kRtv: {
+      if (resource_info->pingpong) {
+        auto allocation0 = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+        auto allocation1 = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+        resource_creation_asset->allocations->insert(GetPinpongResourceId(resource_id, 0), allocation0);
+        resource_creation_asset->allocations->insert(GetPinpongResourceId(resource_id, 1), allocation1);
+        break;
+      }
+      auto allocation = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+      resource_creation_asset->allocations->insert(resource_id, allocation);
+      break;
+    }
+    case ResourceCreationType::kDsv: {
+      auto allocation = CreateTexture2dDsv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+      resource_creation_asset->allocations->insert(resource_id, allocation);
+      break;
+    }
+    case ResourceCreationType::kNone: {
+      break;
+    }
+  }
+}
 } // namespace
 namespace boke {
-enum class ResourceCreationType : uint8_t {
-  kNone,
-  kRtv,
-  kDsv,
-};
-struct ResourceInfo {
-  ResourceCreationType creation_type{};
-  D3D12_RESOURCE_FLAGS flags{};
-  DXGI_FORMAT format{};
-  Size2d size{};
-  bool pingpong{};
-};
 class DescriptorHandles final {
  public:
   DescriptorHandles(tote::AllocatorCallbacks<AllocatorData>);
@@ -210,74 +304,18 @@ auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, Allocat
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocator;
 }
-auto CreateTexture2d(D3D12MA::Allocator* allocator,
-                     const Size2d& size,
-                     const DXGI_FORMAT format,
-                     const D3D12_RESOURCE_FLAGS flags,
-                     const D3D12_BARRIER_LAYOUT layout,
-                     const D3D12_CLEAR_VALUE* clear_value,
-                     const uint32_t castable_format_num, DXGI_FORMAT* castable_formats) {
-  using namespace D3D12MA;
-  D3D12_RESOURCE_DESC1 resource_desc{
-    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-    .Alignment = 0,
-    .Width = size.width,
-    .Height = size.height,
-    .DepthOrArraySize = 1,
-    .MipLevels = 1,
-    .Format = format,
-    .SampleDesc = {
-      .Count = 1,
-      .Quality = 0,
-    },
-    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-    .Flags = flags,
-  };
-  D3D12MA::ALLOCATION_DESC allocation_desc{
-    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-  };
-  D3D12MA::Allocation* allocation{};
-  const auto hr = allocator->CreateResource3(
-      &allocation_desc,
-      &resource_desc,
-      layout,
-      clear_value,
-      castable_format_num, castable_formats,
-      &allocation,
-      IID_NULL, nullptr); // pointer to resource
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return allocation;
-}
-auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS optional_flags = D3D12_RESOURCE_FLAG_NONE) {
-  D3D12_CLEAR_VALUE clear_value{
-    .Format = format,
-    .Color = {},
-  };
-  return CreateTexture2d(allocator, size, format,
-                         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | optional_flags,
-                         D3D12_BARRIER_LAYOUT_RENDER_TARGET,
-                         &clear_value,
-                         0, nullptr);
-}
-auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS optional_flags = D3D12_RESOURCE_FLAG_NONE) {
-  D3D12_CLEAR_VALUE clear_value{
-    .Format = format,
-    .DepthStencil = {
-      .Depth = 1.0f, // set 0.0f for inverse-z
-      .Stencil = 0,
-    },
-  };
-  return CreateTexture2d(allocator, size, format,
-                         D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | optional_flags,
-                         D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
-                         &clear_value,
-                         0, nullptr);
-}
 DescriptorHandles::DescriptorHandles(tote::AllocatorCallbacks<AllocatorData> allocator_data)
     : rtv_handles(allocator_data)
     , dsv_handles(allocator_data)
     , srv_handles(allocator_data) {}
 DescriptorHandles::~DescriptorHandles() {}
+auto CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations) {
+  ResourceCreationAsset asset{
+    .allocator = allocator,
+    .allocations = &allocations,
+  };
+  resource_info.iterate<ResourceCreationAsset>(CreateResourceImpl, &asset);
+}
 } // namespace
 #include "doctest/doctest.h"
 TEST_CASE("resources") {
@@ -399,18 +437,18 @@ TEST_CASE("resources") {
   CHECK_EQ(resource_info["swapchain"_id].pingpong, false);
   // gpu resource + descriptor handles
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
-  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
-  // CreateResources(resource_info, resources);
-  CHECK_EQ(resources.size(), 6);
-  CHECK_NE(resources["gbuffer0"_id], nullptr);
-  CHECK_NE(resources["gbuffer1"_id], nullptr);
-  CHECK_NE(resources["gbuffer2"_id], nullptr);
-  CHECK_NE(resources["gbuffer3"_id], nullptr);
-  CHECK_NE(resources["depth"_id], nullptr);
-  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], nullptr);
-  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
+  StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
+  CreateResources(resource_info, gpu_memory_allocator, allocations);
+  CHECK_EQ(allocations.size(), 7);
+  CHECK_NE(allocations["gbuffer0"_id], nullptr);
+  CHECK_NE(allocations["gbuffer1"_id], nullptr);
+  CHECK_NE(allocations["gbuffer2"_id], nullptr);
+  CHECK_NE(allocations["gbuffer3"_id], nullptr);
+  CHECK_NE(allocations["depth"_id], nullptr);
+  CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 0)], nullptr);
+  CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 1)], nullptr);
   DescriptorHandles descriptor_handles(GetAllocatorCallbacks(allocator_data));
-  // PrepareDescriptorHandles(resources, descriptor_handles);
+  // PrepareDescriptorHandles(allocations, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv_handles.size(), 9);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer1"_id].ptr, 0UL);
@@ -439,7 +477,7 @@ TEST_CASE("resources") {
   // terminate
   gpu_memory_allocator->Release();
   descriptor_handles.~DescriptorHandles();
-  resources.~StrHashMap<ID3D12Resource*>();
+  allocations.~StrHashMap<D3D12MA::Allocation*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   TermDxgi(dxgi);
