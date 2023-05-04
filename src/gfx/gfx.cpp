@@ -172,30 +172,6 @@ auto EndCommandListRecording(D3d12CommandList* command_list) {
   const auto hr = command_list->Close();
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
 }
-auto GetDxgiFormat(const char* format) {
-  if (strcmp(format, "R8G8B8A8_UNORM") == 0) {
-    return DXGI_FORMAT_R8G8B8A8_UNORM;
-  }
-  if (strcmp(format, "R8G8B8A8_UNORM_SRGB") == 0) {
-    return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-  }
-  if (strcmp(format, "B8G8R8A8_UNORM") == 0) {
-    return DXGI_FORMAT_B8G8R8A8_UNORM;
-  }
-  if (strcmp(format, "B8G8R8A8_UNORM_SRGB") == 0) {
-    return DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-  }
-  if (strcmp(format, "R16G16B16A16_FLOAT") == 0) {
-    return DXGI_FORMAT_R16G16B16A16_FLOAT;
-  }
-  if (strcmp(format, "R10G10B10A2_UNORM") == 0) {
-    return DXGI_FORMAT_R10G10B10A2_UNORM;
-  }
-  if (strcmp(format, "R10G10B10_XR_BIAS_A2_UNORM") == 0) {
-    return DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM;
-  }
-  return DXGI_FORMAT_R8G8B8A8_UNORM;
-}
 auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag = D3D12_DESCRIPTOR_HEAP_FLAG_NONE) {
   ID3D12DescriptorHeap* descriptor_heap{};
   const D3D12_DESCRIPTOR_HEAP_DESC desc = {
