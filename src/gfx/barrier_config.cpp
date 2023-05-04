@@ -3,6 +3,7 @@
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
 #include "render_pass_info.h"
+#include "resources.h"
 namespace boke {
 const uint32_t kInvalidIndex = ~0U;
 struct BarrierTransitionInfoPerResource {
@@ -10,24 +11,6 @@ struct BarrierTransitionInfoPerResource {
   D3D12_BARRIER_ACCESS access{D3D12_BARRIER_ACCESS_NO_ACCESS};
   D3D12_BARRIER_LAYOUT layout{};
 };
-auto HashInteger(const uint64_t x) {
-  // Jenkins hash
-  const uint8_t* data = reinterpret_cast<const uint8_t*>(&x);
-  const size_t length = sizeof(x);
-  uint64_t hash = 0;
-  for (size_t i = 0; i < length; ++i) {
-    hash += data[i];
-    hash += (hash << 10);
-    hash ^= (hash >> 6);
-  }
-  hash += (hash << 3);
-  hash ^= (hash >> 11);
-  hash += (hash << 15);
-  return hash;
-}
-auto GetPinpongResourceId(const StrHash id, const uint32_t index) {
-  return HashInteger(id + index);
-}
 auto GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
   if (!pingpong_current_write_index.contains(id)) { return id; }
   return GetPinpongResourceId(id, pingpong_current_write_index[id] == 0 ? 1 : 0);

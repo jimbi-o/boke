@@ -16,6 +16,21 @@ void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_da
 void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
   boke::Deallocate(ptr, static_cast<boke::AllocatorData*>(private_data));
 }
+auto HashInteger(const uint64_t x) {
+  // Jenkins hash
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(&x);
+  const size_t length = sizeof(x);
+  uint64_t hash = 0;
+  for (size_t i = 0; i < length; ++i) {
+    hash += data[i];
+    hash += (hash << 10);
+    hash ^= (hash >> 6);
+  }
+  hash += (hash << 3);
+  hash ^= (hash >> 11);
+  hash += (hash << 15);
+  return hash;
+}
 } // namespace
 namespace boke {
 enum class ResourceCreationType : uint8_t {
@@ -29,6 +44,20 @@ struct ResourceInfo {
   DXGI_FORMAT format{};
   Size2d size{};
   bool pingpong{};
+};
+class DescriptorHandles final {
+ public:
+  DescriptorHandles(tote::AllocatorCallbacks<AllocatorData>);
+  ~DescriptorHandles();
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles;
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles;
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> srv_handles;
+ private:
+  DescriptorHandles() = delete;
+  DescriptorHandles(const DescriptorHandles&) = delete;
+  DescriptorHandles(DescriptorHandles&&) = delete;
+  void operator=(const DescriptorHandles&) = delete;
+  void operator=(DescriptorHandles&&) = delete;
 };
 DXGI_FORMAT GetDxgiFormat(const char* format) {
   if (strcmp(format, "R8G8B8A8_UNORM") == 0) {
@@ -63,6 +92,9 @@ struct ResourceOptions {
   Size2d size{};
   DXGI_FORMAT format{};
 };
+StrHash GetPinpongResourceId(const StrHash id, const uint32_t index) {
+  return HashInteger(id + index);
+}
 void FillResourceOptions(const ResourceOptions* resource_options, const StrHash resource_id, ResourceInfo* info) {
   bool size_found = false;
   bool format_found = false;
@@ -241,7 +273,12 @@ auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const
                          &clear_value,
                          0, nullptr);
 }
-}
+DescriptorHandles::DescriptorHandles(tote::AllocatorCallbacks<AllocatorData> allocator_data)
+    : rtv_handles(allocator_data)
+    , dsv_handles(allocator_data)
+    , srv_handles(allocator_data) {}
+DescriptorHandles::~DescriptorHandles() {}
+} // namespace
 #include "doctest/doctest.h"
 TEST_CASE("resources") {
   using namespace boke;
@@ -360,13 +397,45 @@ TEST_CASE("resources") {
   CHECK_EQ(resource_info["swapchain"_id].size.width, primary_width);
   CHECK_EQ(resource_info["swapchain"_id].size.height, primary_height);
   CHECK_EQ(resource_info["swapchain"_id].pingpong, false);
-  // gpu resources
+  // gpu resource + descriptor handles
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
-  // StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
-  // CresteResources(resources);
+  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  // CreateResources(resource_info, resources);
+  CHECK_EQ(resources.size(), 6);
+  CHECK_NE(resources["gbuffer0"_id], nullptr);
+  CHECK_NE(resources["gbuffer1"_id], nullptr);
+  CHECK_NE(resources["gbuffer2"_id], nullptr);
+  CHECK_NE(resources["gbuffer3"_id], nullptr);
+  CHECK_NE(resources["depth"_id], nullptr);
+  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], nullptr);
+  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
+  DescriptorHandles descriptor_handles(GetAllocatorCallbacks(allocator_data));
+  // PrepareDescriptorHandles(descriptor_handles);
+  CHECK_EQ(descriptor_handles.rtv_handles.size(), 9);
+  CHECK_NE(descriptor_handles.rtv_handles["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.dsv_handles.size(), 1);
+  CHECK_NE(descriptor_handles.dsv_handles["depth"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles.size(), 7);
+  CHECK_NE(descriptor_handles.srv_handles["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles["imgui_font"_id].ptr, 0UL);
   // terminate
-  resource_info.~StrHashMap<ResourceInfo>();
   gpu_memory_allocator->Release();
+  descriptor_handles.~DescriptorHandles();
+  resources.~StrHashMap<ID3D12Resource*>();
+  resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
