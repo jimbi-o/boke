@@ -18,8 +18,10 @@ source_group("External Files" FILES ${BOKE_EXTERNAL_FILES})
 
 set(BOKE_SRC_FILES
   gfx/gfx.cpp
+  gfx/core.cpp
   gfx/barrier_config.cpp
   gfx/descriptors.cpp
+  gfx/resources.cpp
 )
 source_group("Source Files (gfx)" FILES ${BOKE_SRC_FILES})
 

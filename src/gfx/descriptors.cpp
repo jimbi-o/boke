@@ -2,7 +2,6 @@
 #include "boke/container.h"
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
-#include "doctest/doctest.h"
 #include "render_pass_info.h"
 namespace boke {
 struct AllViewDescriptorHandles {
@@ -13,6 +12,7 @@ struct AllViewDescriptorHandles {
   D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
 };
 }
+#include "doctest/doctest.h"
 TEST_CASE("descriptor handles") {
   using namespace boke;
   StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};

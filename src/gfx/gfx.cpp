@@ -1,38 +1,22 @@
 #include <wchar.h>
 #include <Windows.h>
 #include "dxgi1_6.h"
-#ifndef NDEBUG
-#include "dxgidebug.h"
-#endif
-#ifndef NDEBUG
-#include "d3d12sdklayers.h"
-#endif
-#include <D3D12MemAlloc.h>
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx12.h"
 #include "boke/allocator.h"
 #include "boke/container.h"
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
 #include "boke/util.h"
-#include "imgui.h"
-#include "backends/imgui_impl_win32.h"
-#include "backends/imgui_impl_dx12.h"
+#include "core.h"
 #include "json.h"
+#include "resources.h"
 #include "string_util.h"
-#include "doctest/doctest.h"
-#define CALL_DLL_FUNCTION(library, function) reinterpret_cast<decltype(&function)>(GetProcAddress(library, #function))
-#define LOAD_DLL_FUNCTION(library, function) decltype(&function) function = reinterpret_cast<decltype(function)>(GetProcAddress(library, #function))
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-#define ENABLE_GPU_VALIDATION
 #define SKIP_GPU_COMMAND_RECORDING
 namespace {
 using namespace boke;
-struct Size2d {
-  uint32_t width{};
-  uint32_t height{};
-};
-using DxgiFactory = IDXGIFactory7;
-using DxgiAdapter = IDXGIAdapter4;
-using D3d12Device = ID3D12Device10;
 using DxgiSwapchain = IDXGISwapChain4;
 using D3d12Fence = ID3D12Fence1;
 using D3d12CommandAllocator = ID3D12CommandAllocator;
@@ -89,154 +73,6 @@ auto ReleaseWin32Window(WindowInfo& info, boke::AllocatorData* allocator_data) {
   ::DestroyWindow(info.hwnd);
   ::UnregisterClassW(info.class_name, info.h_instance);
   Deallocate(info.class_name, allocator_data);
-}
-struct GfxLibraries {
-  HMODULE dxgi_library{};
-  HMODULE d3d12_library{};
-};
-auto LoadGfxLibraries() {
-  auto dxgi_library = LoadLibrary("Dxgi.dll");
-  DEBUG_ASSERT(dxgi_library, DebugAssert());
-  auto d3d12_library = LoadLibrary("D3D12.dll");
-  DEBUG_ASSERT(d3d12_library, DebugAssert{});
-  return GfxLibraries {
-    .dxgi_library = dxgi_library,
-    .d3d12_library = d3d12_library,
-  };
-}
-auto ReleaseGfxLibraries(GfxLibraries& libraries) {
-  FreeLibrary(libraries.d3d12_library);
-#ifndef NDEBUG
-  IDXGIDebug1* debug = nullptr;
-  auto hr = CALL_DLL_FUNCTION(libraries.dxgi_library, DXGIGetDebugInterface1)(0, IID_PPV_ARGS(&debug));
-  if (FAILED(hr)) {
-    spdlog::warn("DXGIGetDebugInterface failed. {}", hr);
-    return;
-  }
-  debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-  debug->Release();
-#endif
-  FreeLibrary(libraries.dxgi_library);
-}
-struct DxgiCore {
-  DxgiFactory* factory{};
-  DxgiAdapter* adapter{};
-};
-enum AdapterType : uint8_t { kHighPerformance, kWarp, };
-template <AdapterType adapter_type>
-auto InitDxgi(HMODULE library) {
-  SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-  DxgiFactory* factory = nullptr;
-  auto hr = CALL_DLL_FUNCTION(library, CreateDXGIFactory2)(0, IID_PPV_ARGS(&factory));
-  DEBUG_ASSERT(SUCCEEDED(hr) && factory, DebugAssert{});
-  DxgiAdapter* adapter = nullptr;
-  if constexpr (adapter_type == AdapterType::kWarp) {
-    hr = factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter));
-  } else {
-    hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter));
-  }
-  DEBUG_ASSERT(SUCCEEDED(hr) && adapter, DebugAssert{});
-  {
-    DXGI_ADAPTER_DESC1 desc;
-    adapter->GetDesc1(&desc);
-    if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-      spdlog::info("DxgiAdapter is software");
-    }
-  }
-  return DxgiCore {
-    .factory = factory,
-    .adapter = adapter,
-  };
-}
-auto TermDxgi(DxgiCore& dxgi) {
-  auto refval = dxgi.adapter->Release();
-  if (refval != 0UL) {
-    spdlog::error("adapter reference left. {}", refval);
-  }
-  refval = dxgi.factory->Release();
-  if (refval != 0UL) {
-    spdlog::error("factory reference left. {}", refval);
-  }
-}
-auto CreateDevice(HMODULE library, DxgiAdapter* adapter) {
-#if !defined(NDEBUG) && defined(ENABLE_GPU_VALIDATION)
-  if (IsDebuggerPresent()) {
-    ID3D12Debug* debug_interface = nullptr;
-    if (SUCCEEDED(CALL_DLL_FUNCTION(library, D3D12GetDebugInterface)(IID_PPV_ARGS(&debug_interface)))) {
-      debug_interface->EnableDebugLayer();
-      spdlog::info("EnableDebugLayer");
-      ID3D12Debug6* debug_interface6 = nullptr;
-      if (SUCCEEDED(debug_interface->QueryInterface(IID_PPV_ARGS(&debug_interface6)))) {
-        debug_interface6->SetEnableGPUBasedValidation(true);
-        debug_interface6->SetForceLegacyBarrierValidation(false);
-        spdlog::info("SetEnableGPUBasedValidation");
-        debug_interface6->Release();
-      }
-      debug_interface->Release();
-    }
-  }
-#endif
-  {
-    UUID experimental_features[] = { D3D12ExperimentalShaderModels };
-    auto hr = CALL_DLL_FUNCTION(library, D3D12EnableExperimentalFeatures)(1, experimental_features, nullptr, nullptr);
-    if (SUCCEEDED(hr)) {
-      spdlog::info("experimental shader models enabled.");
-    } else {
-      spdlog::warn("Failed to enable experimental shader models. {}", hr);
-    }
-  }
-  const auto feature_level = D3D_FEATURE_LEVEL_12_2;
-  D3d12Device* device{};
-  auto hr = CALL_DLL_FUNCTION(library, D3D12CreateDevice)(adapter, feature_level, IID_PPV_ARGS(&device));
-  DEBUG_ASSERT(SUCCEEDED(hr) && device, DebugAssert{});
-  if (FAILED(hr)) {
-    spdlog::critical("D3D12CreateDevice failed. {}", hr);
-    exit(1);
-  }
-#ifndef NDEBUG
-  if (IsDebuggerPresent()) {
-    ID3D12InfoQueue* info_queue = nullptr;
-    if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&info_queue)))) {
-      info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
-      info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-      info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-#if 0
-      D3D12_MESSAGE_SEVERITY suppressed_severity[] = {
-        D3D12_MESSAGE_SEVERITY_INFO,
-      };
-      // D3D12_MESSAGE_ID supressed_id[] = {
-      // };
-      D3D12_INFO_QUEUE_FILTER queue_filter = {};
-      queue_filter.DenyList.NumSeverities = _countof(suppressed_severity);
-      queue_filter.DenyList.pSeverityList = suppressed_severity;
-      // queue_filter.DenyList.NumIDs = _countof(supressed_id);
-      // queue_filter.DenyList.pIDList = supressed_id;
-      info_queue->PushStorageFilter(&queue_filter);
-#endif
-      info_queue->Release();
-    }
-  }
-#endif
-  {
-    D3D12_FEATURE_DATA_D3D12_OPTIONS5 options{};
-    if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options, sizeof(options)))) {
-      spdlog::info("ray tracing tier:{} (1.0:{} 1.1:{})", fmt::underlying(options.RaytracingTier), fmt::underlying(D3D12_RAYTRACING_TIER_1_0), fmt::underlying(D3D12_RAYTRACING_TIER_1_1));
-    }
-  }
-  {
-    D3D12_FEATURE_DATA_D3D12_OPTIONS7 options{};
-    if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options, sizeof(options)))) {
-      spdlog::info("mesh shader tier:{} (1:{})", fmt::underlying(options.MeshShaderTier), fmt::underlying(D3D12_MESH_SHADER_TIER_1));
-    }
-  }
-  {
-    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
-    if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options)))) {
-      spdlog::info("enhanced barriers:{}", options.EnhancedBarriersSupported);
-    }
-  }
-  device->SetName(L"device");
-  return device;
 }
 auto CreateCommandQueue(D3d12Device* const device, const D3D12_COMMAND_LIST_TYPE type, const D3D12_COMMAND_QUEUE_PRIORITY priority, const D3D12_COMMAND_QUEUE_FLAGS flags, const UINT node_mask = 0) {
   D3D12_COMMAND_QUEUE_DESC desc = { .Type = type, .Priority = priority, .Flags = flags, .NodeMask = node_mask, };
@@ -315,94 +151,6 @@ auto SetD3d12NameToList(ID3D12Object** list, const uint32_t num, const wchar_t* 
     swprintf(name, name_len, L"%s%d", basename, i);
     list[i]->SetName(name);
   }
-}
-void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_data) {
-  return Allocate(GetUint32(size), GetUint32(alignment), static_cast<AllocatorData*>(private_data));
-}
-void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
-  Deallocate(ptr, static_cast<AllocatorData*>(private_data));
-}
-auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
-  using namespace D3D12MA;
-  ALLOCATION_CALLBACKS allocation_callbacks{
-    .pAllocate = GpuMemoryAllocatorAllocate,
-    .pFree = GpuMemoryAllocatorDeallocate,
-    .pPrivateData = allocator_data,
-  };
-  ALLOCATOR_DESC allocatorDesc{
-    .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
-    .pDevice = device,
-    .PreferredBlockSize = 0,
-    .pAllocationCallbacks = &allocation_callbacks,
-    .pAdapter = adapter,
-  };
-  Allocator* allocator;
-  const auto hr = CreateAllocator(&allocatorDesc, &allocator);
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return allocator;
-}
-auto CreateTexture2d(D3D12MA::Allocator* allocator,
-                     const Size2d& size,
-                     const DXGI_FORMAT format,
-                     const D3D12_RESOURCE_FLAGS flags,
-                     const D3D12_BARRIER_LAYOUT layout,
-                     const D3D12_CLEAR_VALUE* clear_value,
-                     const uint32_t castable_format_num, DXGI_FORMAT* castable_formats) {
-  using namespace D3D12MA;
-  D3D12_RESOURCE_DESC1 resource_desc{
-    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-    .Alignment = 0,
-    .Width = size.width,
-    .Height = size.height,
-    .DepthOrArraySize = 1,
-    .MipLevels = 1,
-    .Format = format,
-    .SampleDesc = {
-      .Count = 1,
-      .Quality = 0,
-    },
-    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-    .Flags = flags,
-  };
-  D3D12MA::ALLOCATION_DESC allocation_desc{
-    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-  };
-  D3D12MA::Allocation* allocation{};
-  const auto hr = allocator->CreateResource3(
-      &allocation_desc,
-      &resource_desc,
-      layout,
-      clear_value,
-      castable_format_num, castable_formats,
-      &allocation,
-      IID_NULL, nullptr); // pointer to resource
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return allocation;
-}
-auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
-  D3D12_CLEAR_VALUE clear_value{
-    .Format = format,
-    .Color = {},
-  };
-  return CreateTexture2d(allocator, size, format,
-                         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                         D3D12_BARRIER_LAYOUT_RENDER_TARGET,
-                         &clear_value,
-                         0, nullptr);
-}
-auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format) {
-  D3D12_CLEAR_VALUE clear_value{
-    .Format = format,
-    .DepthStencil = {
-      .Depth = 1.0f, // set 0.0f for inverse-z
-      .Stencil = 0,
-    },
-  };
-  return CreateTexture2d(allocator, size, format,
-                         D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
-                         D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
-                         &clear_value,
-                         0, nullptr);
 }
 auto CreateCommandAllocator(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) {
   D3d12CommandAllocator* command_allocator = nullptr;
@@ -535,6 +283,7 @@ auto WaitForFence(HANDLE fence_event, D3d12Fence* fence, const uint64_t fence_si
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
 }
 }
+#include "doctest/doctest.h"
 TEST_CASE("imgui") {
   using namespace boke;
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
@@ -545,7 +294,7 @@ TEST_CASE("imgui") {
   // core units
   auto window_info = CreateWin32Window(json, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
-  auto dxgi = InitDxgi<AdapterType::kHighPerformance>(gfx_libraries.dxgi_library);
+  auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   REQUIRE_NE(device, nullptr);
   // command queue & fence
@@ -628,6 +377,7 @@ TEST_CASE("imgui") {
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     StartCommandListRecording(command_list, command_allocator[frame_index]);
+#ifndef SKIP_GPU_COMMAND_RECORDING
     {
       D3D12_TEXTURE_BARRIER barrier {
         .SyncBefore = D3D12_BARRIER_SYNC_NONE,
@@ -687,6 +437,7 @@ TEST_CASE("imgui") {
       };
       command_list->Barrier(1, &barrier_group);
     }
+#endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
