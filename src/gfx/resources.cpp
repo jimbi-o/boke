@@ -112,6 +112,7 @@ auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const
 struct ResourceCreationAsset {
   D3D12MA::Allocator* allocator{};
   StrHashMap<D3D12MA::Allocation*>* allocations{};
+  StrHashMap<ID3D12Resource*>* resources{};
 };
 void CreateResourceImpl(ResourceCreationAsset* resource_creation_asset, const StrHash resource_id, const ResourceInfo* resource_info) {
   switch (resource_info->creation_type) {
@@ -119,17 +120,23 @@ void CreateResourceImpl(ResourceCreationAsset* resource_creation_asset, const St
       if (resource_info->pingpong) {
         auto allocation0 = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
         auto allocation1 = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-        resource_creation_asset->allocations->insert(GetPinpongResourceId(resource_id, 0), allocation0);
-        resource_creation_asset->allocations->insert(GetPinpongResourceId(resource_id, 1), allocation1);
+        const auto id0 = GetPinpongResourceId(resource_id, 0);
+        const auto id1 = GetPinpongResourceId(resource_id, 1);
+        resource_creation_asset->allocations->insert(id0, allocation0);
+        resource_creation_asset->allocations->insert(id1, allocation1);
+        resource_creation_asset->resources->insert(id0, allocation0->GetResource());
+        resource_creation_asset->resources->insert(id1, allocation1->GetResource());
         break;
       }
       auto allocation = CreateTexture2dRtv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       resource_creation_asset->allocations->insert(resource_id, allocation);
+      resource_creation_asset->resources->insert(resource_id, allocation->GetResource());
       break;
     }
     case ResourceCreationType::kDsv: {
       auto allocation = CreateTexture2dDsv(resource_creation_asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       resource_creation_asset->allocations->insert(resource_id, allocation);
+      resource_creation_asset->resources->insert(resource_id, allocation->GetResource());
       break;
     }
     case ResourceCreationType::kNone: {
@@ -309,10 +316,11 @@ DescriptorHandles::DescriptorHandles(tote::AllocatorCallbacks<AllocatorData> all
     , dsv_handles(allocator_data)
     , srv_handles(allocator_data) {}
 DescriptorHandles::~DescriptorHandles() {}
-auto CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations) {
+auto CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations, StrHashMap<ID3D12Resource*>& resources) {
   ResourceCreationAsset asset{
     .allocator = allocator,
     .allocations = &allocations,
+    .resources = &resources,
   };
   resource_info.iterate<ResourceCreationAsset>(CreateResourceImpl, &asset);
 }
@@ -438,7 +446,8 @@ TEST_CASE("resources") {
   // gpu resource + descriptor handles
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
   StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  CreateResources(resource_info, gpu_memory_allocator, allocations);
+  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  CreateResources(resource_info, gpu_memory_allocator, allocations, resources);
   CHECK_EQ(allocations.size(), 7);
   CHECK_NE(allocations["gbuffer0"_id], nullptr);
   CHECK_NE(allocations["gbuffer1"_id], nullptr);
@@ -447,8 +456,16 @@ TEST_CASE("resources") {
   CHECK_NE(allocations["depth"_id], nullptr);
   CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 0)], nullptr);
   CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 1)], nullptr);
+  CHECK_EQ(resources.size(), 7);
+  CHECK_NE(resources["gbuffer0"_id], nullptr);
+  CHECK_NE(resources["gbuffer1"_id], nullptr);
+  CHECK_NE(resources["gbuffer2"_id], nullptr);
+  CHECK_NE(resources["gbuffer3"_id], nullptr);
+  CHECK_NE(resources["depth"_id], nullptr);
+  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], nullptr);
+  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
   DescriptorHandles descriptor_handles(GetAllocatorCallbacks(allocator_data));
-  // PrepareDescriptorHandles(allocations, descriptor_handles);
+  // PrepareDescriptorHandles(resource_info, allocations, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv_handles.size(), 9);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer1"_id].ptr, 0UL);
@@ -477,10 +494,12 @@ TEST_CASE("resources") {
   // terminate
   gpu_memory_allocator->Release();
   descriptor_handles.~DescriptorHandles();
+  resources.~StrHashMap<ID3D12Resource*>();
   allocations.~StrHashMap<D3D12MA::Allocation*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   delete[] main_buffer;
+  // TODO set name to resources
 }
