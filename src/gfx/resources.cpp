@@ -410,7 +410,7 @@ TEST_CASE("resources") {
   CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], nullptr);
   CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
   DescriptorHandles descriptor_handles(GetAllocatorCallbacks(allocator_data));
-  // PrepareDescriptorHandles(descriptor_handles);
+  // PrepareDescriptorHandles(resources, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv_handles.size(), 9);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer1"_id].ptr, 0UL);
@@ -418,9 +418,13 @@ TEST_CASE("resources") {
   CHECK_NE(descriptor_handles.rtv_handles["gbuffer3"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.rtv_handles[GetPinpongResourceId("primary"_id, 1)].ptr);
   CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 1)].ptr);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 2)].ptr);
+  CHECK_NE(descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 1)].ptr, descriptor_handles.rtv_handles[GetPinpongResourceId("swapchain"_id, 2)].ptr);
   CHECK_NE(descriptor_handles.dsv_handles.size(), 1);
   CHECK_NE(descriptor_handles.dsv_handles["depth"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv_handles.size(), 7);
@@ -430,6 +434,7 @@ TEST_CASE("resources") {
   CHECK_NE(descriptor_handles.srv_handles["gbuffer3"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE(descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv_handles[GetPinpongResourceId("primary"_id, 1)].ptr);
   CHECK_NE(descriptor_handles.srv_handles["imgui_font"_id].ptr, 0UL);
   // terminate
   gpu_memory_allocator->Release();
