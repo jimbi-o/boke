@@ -185,7 +185,7 @@ DescriptorHandles::DescriptorHandles(tote::AllocatorCallbacks<AllocatorData> all
     , dsv(allocator_data)
     , srv(allocator_data) {}
 DescriptorHandles::~DescriptorHandles() {}
-auto PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
+void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   DescriptorHandleImplAsset asset {
     .resources = &resources,
     .device = device,
@@ -195,26 +195,26 @@ auto PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, con
   };
   resource_info.iterate<DescriptorHandleImplAsset>(PrepareDescriptorHandlesImpl, &asset);
 }
-auto AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
+void AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetRtvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr.rtv, descriptor_handle_increment_size.rtv, descriptor_handles.rtv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.rtv.size());
     device->CreateRenderTargetView(resources[i], &desc, handle);
     descriptor_handles.rtv[resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i)] = handle;
   }
 }
-auto AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
+void AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetDsvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr.dsv, descriptor_handle_increment_size.dsv, descriptor_handles.dsv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.dsv.size());
     device->CreateDepthStencilView(resources[0], &desc, handle);
     descriptor_handles.dsv[resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i)] = handle;
   }
 }
-auto AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
+void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetSrvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles.srv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.srv.size());
     if (resources != nullptr) {
       device->CreateShaderResourceView(resources[i], &desc, handle);
     }
@@ -336,7 +336,7 @@ TEST_CASE("descriptors") {
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
   ID3D12Resource* swapchain_resources[swapchain_num]{};
-  AddDescriptorHandlesRtv("swapchain"_id, resource_info["swapchain"_id].format, swapchain_resources, swapchain_num, device, descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles);
+  AddDescriptorHandlesRtv("swapchain"_id, resource_info["swapchain"_id].format, swapchain_resources, swapchain_num, device, descriptor_heap_head_addr.rtv, descriptor_handle_increment_size.rtv, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv.size(), 9);
   CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
@@ -361,7 +361,7 @@ TEST_CASE("descriptors") {
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
-  AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1, device, descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles);
+  AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1, device, descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv.size(), 9);
   CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
