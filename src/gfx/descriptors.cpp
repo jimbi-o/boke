@@ -11,11 +11,6 @@
 #include "resources.h"
 namespace {
 using namespace boke;
-struct DescriptorHandleIncrementSize {
-  uint32_t rtv{};
-  uint32_t dsv{};
-  uint32_t cbv_srv_uav{};
-};
 auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
   return DescriptorHandleIncrementSize{
     .rtv = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV),
@@ -23,11 +18,6 @@ auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
     .cbv_srv_uav = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
   };
 }
-struct DescriptorHandleNum {
-  uint32_t rtv{};
-  uint32_t dsv{};
-  uint32_t cbv_srv_uav{};
-};
 void CountDescriptorHandleNumImpl(DescriptorHandleNum* descriptor_handle_num, const StrHash, const ResourceInfo* resource_info) {
   if (resource_info->flags == D3D12_RESOURCE_FLAG_NONE) { return; }
   const uint32_t add_val = resource_info->pingpong ? 2 : 1;
@@ -57,12 +47,7 @@ auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE 
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return descriptor_heap;
 }
-struct DescriptorHeaps {
-  ID3D12DescriptorHeap* rtv{};
-  ID3D12DescriptorHeap* dsv{};
-  ID3D12DescriptorHeap* cbv_srv_uav{};
-};
-auto CreateDescriptorHeaps(D3d12Device* device, const DescriptorHandleNum& descriptor_handle_num) {
+auto CreateDescriptorHeapsImpl(D3d12Device* device, const DescriptorHandleNum& descriptor_handle_num) {
   DescriptorHeaps descriptor_heaps{
     .rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, descriptor_handle_num.rtv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
     .dsv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, descriptor_handle_num.dsv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
@@ -73,11 +58,6 @@ auto CreateDescriptorHeaps(D3d12Device* device, const DescriptorHandleNum& descr
   descriptor_heaps.cbv_srv_uav->SetName(L"descriptor_heaps_cbv_srv_uav");
   return descriptor_heaps;
 }
-struct DescriptorHeapHeadAddr {
-  D3D12_CPU_DESCRIPTOR_HANDLE rtv{};
-  D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
-  D3D12_CPU_DESCRIPTOR_HANDLE cbv_srv_uav{};
-};
 auto GetDescriptorHeapHeadAddr(const DescriptorHeaps& descriptor_heaps) {
   return DescriptorHeapHeadAddr{
     .rtv = descriptor_heaps.rtv->GetCPUDescriptorHandleForHeapStart(),
@@ -180,6 +160,20 @@ void PrepareDescriptorHandlesImpl(DescriptorHandleImplAsset* asset, const StrHas
 }
 } // namespace
 namespace boke {
+DescriptorHeapSet CreateDescriptorHeaps(const StrHashMap<ResourceInfo>& resource_info, D3d12Device* device, const DescriptorHandleNum& extra_handle_num) {
+  const auto descriptor_handle_increment_size = GetDescriptorHandleIncrementSize(device);
+  auto descriptor_handle_num = CountDescriptorHandleNum(resource_info);
+  descriptor_handle_num.rtv += extra_handle_num.rtv;
+  descriptor_handle_num.dsv += extra_handle_num.dsv;
+  descriptor_handle_num.cbv_srv_uav += extra_handle_num.cbv_srv_uav;
+  auto descriptor_heaps = CreateDescriptorHeapsImpl(device, descriptor_handle_num);
+  auto descriptor_heap_head_addr = GetDescriptorHeapHeadAddr(descriptor_heaps);
+  return {
+    .descriptor_heaps = descriptor_heaps,
+    .increment_size = descriptor_handle_increment_size,
+    .head_addr = descriptor_heap_head_addr,
+  };
+}
 void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   DescriptorHandleImplAsset asset {
     .resources = &resources,
@@ -302,7 +296,7 @@ TEST_CASE("descriptors") {
   CHECK_EQ(descriptor_handle_num.cbv_srv_uav, 6);
   descriptor_handle_num.rtv += swapchain_num; // for swapchain
   descriptor_handle_num.cbv_srv_uav += 1; // for imgui font
-  auto descriptor_heaps = CreateDescriptorHeaps(device, descriptor_handle_num);
+  auto descriptor_heaps = CreateDescriptorHeapsImpl(device, descriptor_handle_num);
   CHECK_NE(descriptor_heaps.rtv, nullptr);
   CHECK_NE(descriptor_heaps.dsv, nullptr);
   CHECK_NE(descriptor_heaps.cbv_srv_uav, nullptr);
