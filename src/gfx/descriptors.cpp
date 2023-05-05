@@ -139,52 +139,47 @@ void PrepareDescriptorHandlesImpl(DescriptorHandleImplAsset* asset, const StrHas
     auto resource_pingpong = (*asset->resources)[resource_id_pingpong_resolved_pingpong];
     if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
       const auto desc = GetRtvDesc2d(resource_info->format);
-      const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv.size());
-      const auto handle_pingpong = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv.size() + 1);
+      const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv->size());
+      const auto handle_pingpong = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv->size() + 1);
       asset->device->CreateRenderTargetView(resource, &desc, handle);
       asset->device->CreateRenderTargetView(resource_pingpong, &desc, handle_pingpong);
-      asset->descriptor_handles->rtv[resource_id_pingpong_resolved] = handle;
-      asset->descriptor_handles->rtv[resource_id_pingpong_resolved_pingpong] = handle_pingpong;
+      asset->descriptor_handles->rtv->insert(resource_id_pingpong_resolved, handle);
+      asset->descriptor_handles->rtv->insert(resource_id_pingpong_resolved_pingpong, handle_pingpong);
     }
     DEBUG_ASSERT(!(resource_info->flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE), DebugAssert{});
     {
       const auto desc = GetSrvDesc2d(resource_info->format);
-      const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv.size());
-      const auto handle_pingpong = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv.size() + 1);
+      const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv->size());
+      const auto handle_pingpong = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv->size() + 1);
       asset->device->CreateShaderResourceView(resource, &desc, handle);
       asset->device->CreateShaderResourceView(resource_pingpong, &desc, handle_pingpong);
-      asset->descriptor_handles->srv[resource_id_pingpong_resolved] = handle;
-      asset->descriptor_handles->srv[resource_id_pingpong_resolved_pingpong] = handle_pingpong;
+      asset->descriptor_handles->srv->insert(resource_id_pingpong_resolved, handle);
+      asset->descriptor_handles->srv->insert(resource_id_pingpong_resolved_pingpong,handle_pingpong);
     }
     return;
   }
   auto resource = (*asset->resources)[resource_id];
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
     const auto desc = GetRtvDesc2d(resource_info->format);
-    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv.size());
+    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->rtv, asset->descriptor_handle_increment_size->rtv, asset->descriptor_handles->rtv->size());
     asset->device->CreateRenderTargetView(resource, &desc, handle);
-    asset->descriptor_handles->rtv[resource_id] = handle;
+    asset->descriptor_handles->rtv->insert(resource_id, handle);
   }
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
     const auto desc = GetDsvDesc2d(resource_info->format);
-    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->dsv, asset->descriptor_handle_increment_size->dsv, asset->descriptor_handles->dsv.size());
+    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->dsv, asset->descriptor_handle_increment_size->dsv, asset->descriptor_handles->dsv->size());
     asset->device->CreateDepthStencilView(resource, &desc, handle);
-    asset->descriptor_handles->dsv[resource_id] = handle;
+    asset->descriptor_handles->dsv->insert(resource_id, handle);
   }
   if (!(resource_info->flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)) {
     const auto desc = GetSrvDesc2d(resource_info->format);
-    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv.size());
+    const auto handle = GetDescriptorHandle(asset->descriptor_heap_head_addr->cbv_srv_uav, asset->descriptor_handle_increment_size->cbv_srv_uav, asset->descriptor_handles->srv->size());
     asset->device->CreateShaderResourceView(resource, &desc, handle);
-    asset->descriptor_handles->srv[resource_id] = handle;
+    asset->descriptor_handles->srv->insert(resource_id, handle);
   }
 }
 } // namespace
 namespace boke {
-DescriptorHandles::DescriptorHandles(tote::AllocatorCallbacks<AllocatorData> allocator_data)
-    : rtv(allocator_data)
-    , dsv(allocator_data)
-    , srv(allocator_data) {}
-DescriptorHandles::~DescriptorHandles() {}
 void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   DescriptorHandleImplAsset asset {
     .resources = &resources,
@@ -198,27 +193,27 @@ void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, con
 void AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetRtvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.rtv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.rtv->size());
     device->CreateRenderTargetView(resources[i], &desc, handle);
-    descriptor_handles.rtv[resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i)] = handle;
+    descriptor_handles.rtv->insert(resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i), handle);
   }
 }
 void AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetDsvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.dsv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.dsv->size());
     device->CreateDepthStencilView(resources[0], &desc, handle);
-    descriptor_handles.dsv[resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i)] = handle;
+    descriptor_handles.dsv->insert(resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i), handle);
   }
 }
 void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   const auto desc = GetSrvDesc2d(format);
   for (uint32_t i = 0; i < resource_num; i++) {
-    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.srv.size());
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles.srv->size());
     if (resources != nullptr) {
       device->CreateShaderResourceView(resources[i], &desc, handle);
     }
-    descriptor_handles.srv[resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i)] = handle;
+    descriptor_handles.srv->insert(resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i), handle);
   }
 }
 } // namespace boke
@@ -315,82 +310,91 @@ TEST_CASE("descriptors") {
   CHECK_NE(descriptor_heap_head_addr.rtv.ptr, 0UL);
   CHECK_NE(descriptor_heap_head_addr.dsv.ptr, 0UL);
   CHECK_NE(descriptor_heap_head_addr.cbv_srv_uav.ptr, 0UL);
-  DescriptorHandles descriptor_handles(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> rtv(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> dsv(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> srv(GetAllocatorCallbacks(allocator_data));
+  DescriptorHandles descriptor_handles{
+    .rtv = &rtv,
+    .dsv = &dsv,
+    .srv = &srv,
+  };
   PrepareDescriptorHandles(resource_info, resources, device, descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles);
-  CHECK_EQ(descriptor_handles.rtv.size(), 6);
-  CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr);
-  CHECK_EQ(descriptor_handles.dsv.size(), 1);
-  CHECK_NE(descriptor_handles.dsv["depth"_id].ptr, 0UL);
-  CHECK_EQ(descriptor_handles.srv.size(), 6);
-  CHECK_NE(descriptor_handles.srv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_EQ((*descriptor_handles.rtv).size(), 6);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_EQ((*descriptor_handles.dsv).size(), 1);
+  CHECK_NE((*descriptor_handles.dsv)["depth"_id].ptr, 0UL);
+  CHECK_EQ((*descriptor_handles.srv).size(), 6);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr);
   ID3D12Resource* swapchain_resources[swapchain_num]{};
   AddDescriptorHandlesRtv("swapchain"_id, resource_info["swapchain"_id].format, swapchain_resources, swapchain_num, device, descriptor_heap_head_addr.rtv, descriptor_handle_increment_size.rtv, descriptor_handles);
-  CHECK_EQ(descriptor_handles.rtv.size(), 9);
-  CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr);
-  CHECK_EQ(descriptor_handles.dsv.size(), 1);
-  CHECK_NE(descriptor_handles.dsv["depth"_id].ptr, 0UL);
-  CHECK_EQ(descriptor_handles.srv.size(), 6);
-  CHECK_NE(descriptor_handles.srv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_EQ((*descriptor_handles.rtv).size(), 9);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr);
+  CHECK_EQ((*descriptor_handles.dsv).size(), 1);
+  CHECK_NE((*descriptor_handles.dsv)["depth"_id].ptr, 0UL);
+  CHECK_EQ((*descriptor_handles.srv).size(), 6);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr);
   AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1, device, descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles);
-  CHECK_EQ(descriptor_handles.rtv.size(), 9);
-  CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("primary"_id, 1)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 0)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr);
-  CHECK_NE(descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 1)].ptr, descriptor_handles.rtv[GetPinpongResourceId("swapchain"_id, 2)].ptr);
-  CHECK_EQ(descriptor_handles.dsv.size(), 1);
-  CHECK_NE(descriptor_handles.dsv["depth"_id].ptr, 0UL);
-  CHECK_EQ(descriptor_handles.srv.size(), 7);
-  CHECK_NE(descriptor_handles.srv["gbuffer0"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer1"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer2"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv["gbuffer3"_id].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
-  CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
-  CHECK_NE(descriptor_handles.srv["imgui_font"_id].ptr, 0UL);
+  CHECK_EQ((*descriptor_handles.rtv).size(), 9);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 0)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr);
+  CHECK_NE((*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 1)].ptr, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, 2)].ptr);
+  CHECK_EQ((*descriptor_handles.dsv).size(), 1);
+  CHECK_NE((*descriptor_handles.dsv)["depth"_id].ptr, 0UL);
+  CHECK_EQ((*descriptor_handles.srv).size(), 7);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer0"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer1"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer2"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)["gbuffer3"_id].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
+  CHECK_NE((*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 0)].ptr, (*descriptor_handles.srv)[GetPinpongResourceId("primary"_id, 1)].ptr);
+  CHECK_NE((*descriptor_handles.srv)["imgui_font"_id].ptr, 0UL);
   descriptor_heaps.rtv->Release();
   descriptor_heaps.dsv->Release();
   descriptor_heaps.cbv_srv_uav->Release();
-  descriptor_handles.~DescriptorHandles();
+  rtv.~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  dsv.~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  srv.~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
   resources.~StrHashMap<ID3D12Resource*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();

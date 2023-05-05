@@ -23,13 +23,13 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
   uint32_t src_descriptor_num_index = 0;
   {
     const auto resource_id = GetResourceIdPingpongRead(render_pass_info.srv[0], pingpong_current_write_index);
-    const auto& handle = descriptor_handles.srv[resource_id];
+    const auto& handle = (*descriptor_handles.srv)[resource_id];
     src_descriptor_handles[src_descriptor_num_index].ptr = handle.ptr;
     src_descriptor_num[src_descriptor_num_index] = 1;
   }
   for (uint32_t i = 1; i < render_pass_info.srv_num; i++) {
     const auto resource_id = GetResourceIdPingpongRead(render_pass_info.srv[i], pingpong_current_write_index);
-    const auto& handle = descriptor_handles.srv[resource_id];
+    const auto& handle = (*descriptor_handles.srv)[resource_id];
     if (src_descriptor_handles[src_descriptor_num_index].ptr + src_descriptor_num[src_descriptor_num_index] * increment_size == handle.ptr) {
       src_descriptor_num[src_descriptor_num_index]++;
       continue;
