@@ -10,26 +10,6 @@
 #include "render_pass_info.h"
 #include "resources.h"
 namespace boke {
-struct DescriptorHandleIncrementSize {
-  uint32_t rtv{};
-  uint32_t dsv{};
-  uint32_t cbv_srv_uav{};
-};
-struct DescriptorHandleNum {
-  uint32_t rtv{};
-  uint32_t dsv{};
-  uint32_t cbv_srv_uav{};
-};
-struct DescriptorHeaps {
-  ID3D12DescriptorHeap* rtv{};
-  ID3D12DescriptorHeap* dsv{};
-  ID3D12DescriptorHeap* cbv_srv_uav{};
-};
-struct DescriptorHeapHeadAddr {
-  D3D12_CPU_DESCRIPTOR_HANDLE rtv{};
-  D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
-  D3D12_CPU_DESCRIPTOR_HANDLE cbv_srv_uav{};
-};
 class DescriptorHandles final {
  public:
   DescriptorHandles(tote::AllocatorCallbacks<AllocatorData>);
@@ -47,6 +27,11 @@ class DescriptorHandles final {
 } // namespace boke
 namespace {
 using namespace boke;
+struct DescriptorHandleIncrementSize {
+  uint32_t rtv{};
+  uint32_t dsv{};
+  uint32_t cbv_srv_uav{};
+};
 auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
   return DescriptorHandleIncrementSize{
     .rtv = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV),
@@ -54,6 +39,11 @@ auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
     .cbv_srv_uav = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
   };
 }
+struct DescriptorHandleNum {
+  uint32_t rtv{};
+  uint32_t dsv{};
+  uint32_t cbv_srv_uav{};
+};
 void CountDescriptorHandleNumImpl(DescriptorHandleNum* descriptor_handle_num, const StrHash, const ResourceInfo* resource_info) {
   if (resource_info->flags == D3D12_RESOURCE_FLAG_NONE) { return; }
   const uint32_t add_val = resource_info->pingpong ? 2 : 1;
@@ -83,6 +73,11 @@ auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE 
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return descriptor_heap;
 }
+struct DescriptorHeaps {
+  ID3D12DescriptorHeap* rtv{};
+  ID3D12DescriptorHeap* dsv{};
+  ID3D12DescriptorHeap* cbv_srv_uav{};
+};
 auto CreateDescriptorHeaps(D3d12Device* device, const DescriptorHandleNum& descriptor_handle_num) {
   DescriptorHeaps descriptor_heaps{
     .rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, descriptor_handle_num.rtv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
@@ -94,6 +89,11 @@ auto CreateDescriptorHeaps(D3d12Device* device, const DescriptorHandleNum& descr
   descriptor_heaps.cbv_srv_uav->SetName(L"descriptor_heaps_cbv_srv_uav");
   return descriptor_heaps;
 }
+struct DescriptorHeapHeadAddr {
+  D3D12_CPU_DESCRIPTOR_HANDLE rtv{};
+  D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
+  D3D12_CPU_DESCRIPTOR_HANDLE cbv_srv_uav{};
+};
 auto GetDescriptorHeapHeadAddr(const DescriptorHeaps& descriptor_heaps) {
   return DescriptorHeapHeadAddr{
     .rtv = descriptor_heaps.rtv->GetCPUDescriptorHandleForHeapStart(),
