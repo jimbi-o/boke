@@ -348,7 +348,7 @@ TEST_CASE("descriptors") {
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr, 0UL);
   CHECK_NE(descriptor_handles.srv[GetPinpongResourceId("primary"_id, 0)].ptr, descriptor_handles.srv[GetPinpongResourceId("primary"_id, 1)].ptr);
   ID3D12Resource* swapchain_resources[swapchain_num]{};
-  AddDescriptorHandlesRtv("swapchain"_id, DXGI_FORMAT_R8G8B8A8_UNORM, swapchain_resources, swapchain_num, device, descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles);
+  AddDescriptorHandlesRtv("swapchain"_id, resource_info["swapchain"_id].format, swapchain_resources, swapchain_num, device, descriptor_heap_head_addr, descriptor_handle_increment_size, descriptor_handles);
   CHECK_EQ(descriptor_handles.rtv.size(), 9);
   CHECK_NE(descriptor_handles.rtv["gbuffer0"_id].ptr, 0UL);
   CHECK_NE(descriptor_handles.rtv["gbuffer1"_id].ptr, 0UL);
