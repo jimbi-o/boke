@@ -2,15 +2,12 @@
 #include "boke/container.h"
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
+#include "barrier_config.h"
 #include "render_pass_info.h"
 #include "resources.h"
-namespace boke {
+namespace {
+using namespace boke;
 const uint32_t kInvalidIndex = ~0U;
-struct BarrierTransitionInfoPerResource {
-  D3D12_BARRIER_SYNC   sync{D3D12_BARRIER_SYNC_NONE};
-  D3D12_BARRIER_ACCESS access{D3D12_BARRIER_ACCESS_NO_ACCESS};
-  D3D12_BARRIER_LAYOUT layout{};
-};
 auto FlipPingPongIndex(const uint32_t list_len, const StrHash* flip_list, StrHashMap<uint32_t>& pingpong_current_write_index) {
   for (uint32_t i = 0; i < list_len; i++) {
     const auto current_index = pingpong_current_write_index[flip_list[i]];
@@ -110,9 +107,6 @@ auto ConfigurePingpongBuffers(const uint32_t render_pass_num, RenderPassInfo* re
     }
   }
 }
-} // namespace boke
-namespace {
-using namespace boke;
 auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const StrHashMap<BarrierTransitionInfoPerResource>& transition_info, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t result_len, StrHash* result) {
   uint32_t result_num = 0;
   for (uint32_t i = 0; i < render_pass.srv_num; i++) {
@@ -138,6 +132,18 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const St
   return result_num;
 }
 } // namespace
+namespace boke {
+void ProcessBarrier(const RenderPassInfo& render_pass_info, BarrierSet& barrier_set) {
+  UpdateTransitionInfo(*barrier_set.next_transition_info, *barrier_set.transition_info);
+  barrier_set.next_transition_info->clear();
+  const uint32_t pingpong_flip_list_len = 8;
+  StrHash pingpong_flip_list[pingpong_flip_list_len]{};
+  const auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info, *barrier_set.transition_info, *barrier_set.pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
+  DEBUG_ASSERT(current_render_pass_pingpong_flip_list_result_len <= pingpong_flip_list_len, DebugAssert{});
+  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, *barrier_set.pingpong_current_write_index);
+  ConfigureBarriersTextureTransitions(render_pass_info, *barrier_set.pingpong_current_write_index, *barrier_set.transition_info, *barrier_set.next_transition_info);
+}
+}
 #include "doctest/doctest.h"
 TEST_CASE("barrier config") {
   using namespace boke;
