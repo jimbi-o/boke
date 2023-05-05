@@ -84,11 +84,15 @@ auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE 
   return descriptor_heap;
 }
 auto CreateDescriptorHeaps(D3d12Device* device, const DescriptorHandleNum& descriptor_handle_num) {
-  return DescriptorHeaps{
+  DescriptorHeaps descriptor_heaps{
     .rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, descriptor_handle_num.rtv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
     .dsv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, descriptor_handle_num.dsv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
     .cbv_srv_uav = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, descriptor_handle_num.cbv_srv_uav, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
   };
+  descriptor_heaps.rtv->SetName(L"descriptor_heaps_rtv");
+  descriptor_heaps.dsv->SetName(L"descriptor_heaps_dsv");
+  descriptor_heaps.cbv_srv_uav->SetName(L"descriptor_heaps_cbv_srv_uav");
+  return descriptor_heaps;
 }
 auto GetDescriptorHeapHeadAddr(const DescriptorHeaps& descriptor_heaps) {
   return DescriptorHeapHeadAddr{
