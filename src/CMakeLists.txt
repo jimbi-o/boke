@@ -22,6 +22,7 @@ set(BOKE_SRC_FILES
   gfx/barrier_config.cpp
   gfx/descriptors.cpp
   gfx/resources.cpp
+  gfx/descriptors_shader_visible.cpp
 )
 source_group("Source Files (gfx)" FILES ${BOKE_SRC_FILES})
 

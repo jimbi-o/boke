@@ -11,38 +11,6 @@ struct BarrierTransitionInfoPerResource {
   D3D12_BARRIER_ACCESS access{D3D12_BARRIER_ACCESS_NO_ACCESS};
   D3D12_BARRIER_LAYOUT layout{};
 };
-auto GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
-  if (!pingpong_current_write_index.contains(id)) { return id; }
-  return GetPinpongResourceId(id, pingpong_current_write_index[id] == 0 ? 1 : 0);
-}
-auto GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
-  if (!pingpong_current_write_index.contains(id)) { return id; }
-  return GetPinpongResourceId(id, pingpong_current_write_index[id]);
-}
-auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const StrHashMap<BarrierTransitionInfoPerResource>& transition_info, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t result_len, StrHash* result) {
-  uint32_t result_num = 0;
-  for (uint32_t i = 0; i < render_pass.srv_num; i++) {
-    const auto srv = render_pass.srv[i];
-    if (!pingpong_current_write_index.contains(srv)) { continue; }
-    bool found_rtv = false;
-    for (uint32_t j = 0; j < render_pass.rtv_num; j++) {
-      if (srv != render_pass.rtv[j]) { continue; }
-      result[result_num] = srv;
-      result_num++;
-      DEBUG_ASSERT(result_num <= result_len, DebugAssert{});
-      found_rtv = true;
-      break;
-    }
-    if (found_rtv) { continue; }
-    // looking at write because it's before flip.
-    if (transition_info[GetResourceIdPingpongWrite(srv, pingpong_current_write_index)].layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
-      result[result_num] = srv;
-      result_num++;
-      DEBUG_ASSERT(result_num <= result_len, DebugAssert{});
-    }
-  }
-  return result_num;
-}
 auto FlipPingPongIndex(const uint32_t list_len, const StrHash* flip_list, StrHashMap<uint32_t>& pingpong_current_write_index) {
   for (uint32_t i = 0; i < list_len; i++) {
     const auto current_index = pingpong_current_write_index[flip_list[i]];
@@ -143,6 +111,33 @@ auto ConfigurePingpongBuffers(const uint32_t render_pass_num, RenderPassInfo* re
   }
 }
 } // namespace boke
+namespace {
+using namespace boke;
+auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const StrHashMap<BarrierTransitionInfoPerResource>& transition_info, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t result_len, StrHash* result) {
+  uint32_t result_num = 0;
+  for (uint32_t i = 0; i < render_pass.srv_num; i++) {
+    const auto srv = render_pass.srv[i];
+    if (!pingpong_current_write_index.contains(srv)) { continue; }
+    bool found_rtv = false;
+    for (uint32_t j = 0; j < render_pass.rtv_num; j++) {
+      if (srv != render_pass.rtv[j]) { continue; }
+      result[result_num] = srv;
+      result_num++;
+      DEBUG_ASSERT(result_num <= result_len, DebugAssert{});
+      found_rtv = true;
+      break;
+    }
+    if (found_rtv) { continue; }
+    // looking at write because it's before flip.
+    if (transition_info[GetResourceIdPingpongWrite(srv, pingpong_current_write_index)].layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
+      result[result_num] = srv;
+      result_num++;
+      DEBUG_ASSERT(result_num <= result_len, DebugAssert{});
+    }
+  }
+  return result_num;
+}
+} // namespace
 #include "doctest/doctest.h"
 TEST_CASE("barrier config") {
   using namespace boke;

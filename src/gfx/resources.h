@@ -20,4 +20,6 @@ struct ResourceInfo {
 DXGI_FORMAT GetDxgiFormat(const char* format);
 StrHash GetPinpongResourceId(const StrHash id, const uint32_t index);
 void ConfigureResourceInfo(const uint32_t render_pass_info_len, RenderPassInfo* render_pass_info, const rapidjson::Value& resource_options, StrHashMap<ResourceInfo>& resource_info);
+StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
+StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
 }

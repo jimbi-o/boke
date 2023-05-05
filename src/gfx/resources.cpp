@@ -291,6 +291,14 @@ void ConfigureResourceInfo(const uint32_t render_pass_info_len, RenderPassInfo* 
   }
   resource_info.iterate<const ResourceOptions>(FillResourceOptions, &resource_options_parsed);
 }
+StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
+  if (!pingpong_current_write_index.contains(id)) { return id; }
+  return GetPinpongResourceId(id, pingpong_current_write_index[id] == 0 ? 1 : 0);
+}
+StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
+  if (!pingpong_current_write_index.contains(id)) { return id; }
+  return GetPinpongResourceId(id, pingpong_current_write_index[id]);
+}
 } // namespace boke
 #include "doctest/doctest.h"
 TEST_CASE("resources") {

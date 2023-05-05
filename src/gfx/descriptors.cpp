@@ -1,30 +1,14 @@
 #include "dxgi1_6.h"
-#include <D3D12MemAlloc.h>
 #include "boke/allocator.h"
 #include "boke/container.h"
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
 #include "boke/util.h"
 #include "core.h"
+#include "descriptors.h"
 #include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
-namespace boke {
-class DescriptorHandles final {
- public:
-  DescriptorHandles(tote::AllocatorCallbacks<AllocatorData>);
-  ~DescriptorHandles();
-  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> rtv;
-  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> dsv;
-  StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE> srv;
- private:
-  DescriptorHandles() = delete;
-  DescriptorHandles(const DescriptorHandles&) = delete;
-  DescriptorHandles(DescriptorHandles&&) = delete;
-  void operator=(const DescriptorHandles&) = delete;
-  void operator=(DescriptorHandles&&) = delete;
-};
-} // namespace boke
 namespace {
 using namespace boke;
 struct DescriptorHandleIncrementSize {
