@@ -413,5 +413,4 @@ TEST_CASE("descriptors") {
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   delete[] main_buffer;
-  // TODO set name to resources
 }
