@@ -10,6 +10,11 @@ T* Allocate(AllocatorData* allocator_data) {
   auto buf = Allocate(sizeof(T), alignof(T), allocator_data);
   return static_cast<T*>(buf);
 }
+template <typename T, typename... U>
+T* New(AllocatorData* allocator_data, U... args) {
+  auto buf = Allocate(sizeof(T), alignof(T), allocator_data);
+  return new(buf) T(args...);
+}
 template <typename T>
 T* AllocateArray(const uint32_t count, AllocatorData* allocator_data) {
   auto buf = Allocate(sizeof(T) * count, alignof(T), allocator_data);

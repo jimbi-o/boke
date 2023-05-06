@@ -36,17 +36,6 @@ auto CountDescriptorHandleNum(const StrHashMap<ResourceInfo>& resouce_info) {
   resouce_info.iterate<DescriptorHandleNum>(CountDescriptorHandleNumImpl, &descriptor_handle_num);
   return descriptor_handle_num;
 }
-auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag) {
-  ID3D12DescriptorHeap* descriptor_heap{};
-  const D3D12_DESCRIPTOR_HEAP_DESC desc = {
-    .Type = descriptor_heap_type,
-    .NumDescriptors = descriptor_heap_num,
-    .Flags = descriptor_heap_flag,
-  };
-  auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return descriptor_heap;
-}
 auto CreateDescriptorHeapsImpl(D3d12Device* device, const DescriptorHandleNum& descriptor_handle_num) {
   DescriptorHeaps descriptor_heaps{
     .rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, descriptor_handle_num.rtv, D3D12_DESCRIPTOR_HEAP_FLAG_NONE),
@@ -170,9 +159,14 @@ DescriptorHeapSet CreateDescriptorHeaps(const StrHashMap<ResourceInfo>& resource
   auto descriptor_heap_head_addr = GetDescriptorHeapHeadAddr(descriptor_heaps);
   return {
     .descriptor_heaps = descriptor_heaps,
-    .increment_size = descriptor_handle_increment_size,
     .head_addr = descriptor_heap_head_addr,
+    .increment_size = descriptor_handle_increment_size,
   };
+}
+void ReleaseDescriptorHeaps(DescriptorHeapSet& descriptor_heaps) {
+  descriptor_heaps.descriptor_heaps.rtv->Release();
+  descriptor_heaps.descriptor_heaps.dsv->Release();
+  descriptor_heaps.descriptor_heaps.cbv_srv_uav->Release();
 }
 void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles) {
   DescriptorHandleImplAsset asset {
@@ -209,6 +203,17 @@ void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D
     }
     descriptor_handles.srv->insert(resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i), handle);
   }
+}
+ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag) {
+  ID3D12DescriptorHeap* descriptor_heap{};
+  const D3D12_DESCRIPTOR_HEAP_DESC desc = {
+    .Type = descriptor_heap_type,
+    .NumDescriptors = descriptor_heap_num,
+    .Flags = descriptor_heap_flag,
+  };
+  auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return descriptor_heap;
 }
 } // namespace boke
 #include "doctest/doctest.h"

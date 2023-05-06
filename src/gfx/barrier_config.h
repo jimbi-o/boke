@@ -10,4 +10,6 @@ struct BarrierSet {
   StrHashMap<BarrierTransitionInfoPerResource>* transition_info{};
   StrHashMap<BarrierTransitionInfoPerResource>* next_transition_info{};
 };
+struct RenderPassInfo;
+void ProcessBarrier(const RenderPassInfo& render_pass_info, BarrierSet& barrier_set);
 }

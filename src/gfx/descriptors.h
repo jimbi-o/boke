@@ -23,8 +23,8 @@ struct DescriptorHeapHeadAddr {
 };
 struct DescriptorHeapSet {
   DescriptorHeaps descriptor_heaps{};
-  DescriptorHandleIncrementSize increment_size{};
   DescriptorHeapHeadAddr head_addr{};
+  DescriptorHandleIncrementSize increment_size{};
 };
 struct DescriptorHeapSetConfig {
   uint32_t extra_rtv_num{};
@@ -37,8 +37,10 @@ struct DescriptorHandles {
   StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>* srv;
 };
 DescriptorHeapSet CreateDescriptorHeaps(const StrHashMap<ResourceInfo>& resource_info, D3d12Device* device, const DescriptorHandleNum& extra_handle_num);
+void ReleaseDescriptorHeaps(DescriptorHeapSet&);
 void PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<ID3D12Resource*>& resources, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles& descriptor_handles);
 void AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles);
 void AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles);
 void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& descriptor_heap_head_addr, const uint32_t descriptor_handle_increment_size, DescriptorHandles& descriptor_handles);
+ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag);
 } // namespace boke

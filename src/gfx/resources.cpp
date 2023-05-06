@@ -17,25 +17,6 @@ void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_da
 void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
   boke::Deallocate(ptr, static_cast<boke::AllocatorData*>(private_data));
 }
-auto CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
-  using namespace D3D12MA;
-  ALLOCATION_CALLBACKS allocation_callbacks{
-    .pAllocate = GpuMemoryAllocatorAllocate,
-    .pFree = GpuMemoryAllocatorDeallocate,
-    .pPrivateData = allocator_data,
-  };
-  ALLOCATOR_DESC allocatorDesc{
-    .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
-    .pDevice = device,
-    .PreferredBlockSize = 0,
-    .pAllocationCallbacks = &allocation_callbacks,
-    .pAdapter = adapter,
-  };
-  Allocator* allocator;
-  const auto hr = CreateAllocator(&allocatorDesc, &allocator);
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return allocator;
-}
 auto HashInteger(const uint64_t x) {
   // Jenkins hash
   const uint8_t* data = reinterpret_cast<const uint8_t*>(&x);
@@ -148,14 +129,6 @@ void CreateResourceImpl(ResourceCreationImplAsset* asset, const StrHash resource
       break;
     }
   }
-}
-auto CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations, StrHashMap<ID3D12Resource*>& resources) {
-  ResourceCreationImplAsset asset{
-    .allocator = allocator,
-    .allocations = &allocations,
-    .resources = &resources,
-  };
-  resource_info.iterate<ResourceCreationImplAsset>(CreateResourceImpl, &asset);
 }
 struct ResourceOptions {
   const rapidjson::Value* options{};
@@ -298,6 +271,51 @@ StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& 
 StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
   if (!pingpong_current_write_index.contains(id)) { return id; }
   return GetPinpongResourceId(id, pingpong_current_write_index[id]);
+}
+D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
+  using namespace D3D12MA;
+  ALLOCATION_CALLBACKS allocation_callbacks{
+    .pAllocate = GpuMemoryAllocatorAllocate,
+    .pFree = GpuMemoryAllocatorDeallocate,
+    .pPrivateData = allocator_data,
+  };
+  ALLOCATOR_DESC allocatorDesc{
+    .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
+    .pDevice = device,
+    .PreferredBlockSize = 0,
+    .pAllocationCallbacks = &allocation_callbacks,
+    .pAdapter = adapter,
+  };
+  Allocator* allocator;
+  const auto hr = CreateAllocator(&allocatorDesc, &allocator);
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocator;
+}
+void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator) {
+  allocator->Release();
+}
+void CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations, StrHashMap<ID3D12Resource*>& resources) {
+  ResourceCreationImplAsset asset{
+    .allocator = allocator,
+    .allocations = &allocations,
+    .resources = &resources,
+  };
+  resource_info.iterate<ResourceCreationImplAsset>(CreateResourceImpl, &asset);
+}
+void ReleaseAllocations(StrHashMap<D3D12MA::Allocation*>&& allocations, StrHashMap<ID3D12Resource*>&& resources) {
+  allocations.iterate([](const StrHash, D3D12MA::Allocation** allocation) {
+    (*allocation)->Release();
+  });
+  // resources acquired from allocation->GetResource() does not need Release
+  allocations.~StrHashMap<D3D12MA::Allocation*>();
+  resources.~StrHashMap<ID3D12Resource*>();
+}
+void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index) {
+  resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* pingpong_current_write_index, const StrHash resource_id, const ResourceInfo* resource_info) {
+    if (resource_info->pingpong) {
+      pingpong_current_write_index->insert(resource_id, 0);
+    }
+  }, &pingpong_current_write_index);
 }
 } // namespace boke
 #include "doctest/doctest.h"
@@ -442,13 +460,8 @@ TEST_CASE("resources") {
   CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
   CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], resources[GetPinpongResourceId("primary"_id, 1)]);
   // terminate
-  allocations.iterate([](const StrHash, D3D12MA::Allocation** allocation) {
-    (*allocation)->Release();
-  });
-  // resources acquired from allocation->GetResource() does not need Release
+  ReleaseAllocations(std::move(allocations), std::move(resources));
   gpu_memory_allocator->Release();
-  resources.~StrHashMap<ID3D12Resource*>();
-  allocations.~StrHashMap<D3D12MA::Allocation*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   TermDxgi(dxgi);

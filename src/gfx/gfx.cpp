@@ -9,8 +9,11 @@
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
 #include "boke/util.h"
+#include "barrier_config.h"
 #include "core.h"
+#include "descriptors.h"
 #include "json.h"
+#include "render_pass_info.h"
 #include "resources.h"
 #include "string_util.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -172,17 +175,6 @@ auto EndCommandListRecording(D3d12CommandList* command_list) {
   const auto hr = command_list->Close();
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
 }
-auto CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag = D3D12_DESCRIPTOR_HEAP_FLAG_NONE) {
-  ID3D12DescriptorHeap* descriptor_heap{};
-  const D3D12_DESCRIPTOR_HEAP_DESC desc = {
-    .Type = descriptor_heap_type,
-    .NumDescriptors = descriptor_heap_num,
-    .Flags = descriptor_heap_flag,
-  };
-  auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
-  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
-  return descriptor_heap;
-}
 struct DescriptorHandleHeapInfoCpu {
   D3D12_CPU_DESCRIPTOR_HANDLE descriptor_head_addr_cpu{};
   uint32_t descriptor_handle_increment_size{};
@@ -258,6 +250,26 @@ auto WaitForFence(HANDLE fence_event, D3d12Fence* fence, const uint64_t fence_si
   const auto hr = fence->SetEventOnCompletion(fence_signal_val, fence_event);
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
 }
+struct GfxCoreUnit {
+  WindowInfo window_info{};
+  GfxLibraries gfx_libraries{};
+  DxgiCore dxgi_core{};
+};
+auto PrepareGfxCore(const rapidjson::Document& json, const boke::AdapterType adapter_type, boke::AllocatorData* allocator_data) {
+  auto window_info = CreateWin32Window(json, allocator_data);
+  auto gfx_libraries = LoadGfxLibraries();
+  auto dxgi_core = InitDxgi(gfx_libraries.dxgi_library, adapter_type);
+  return GfxCoreUnit {
+    .window_info = window_info,
+    .gfx_libraries = gfx_libraries,
+    .dxgi_core = dxgi_core,
+  };
+}
+auto ReleaseGfxCore(GfxCoreUnit& core, boke::AllocatorData* allocator_data) {
+  TermDxgi(core.dxgi_core);
+  ReleaseGfxLibraries(core.gfx_libraries);
+  ReleaseWin32Window(core.window_info, allocator_data);
+}
 }
 #include "doctest/doctest.h"
 TEST_CASE("imgui") {
@@ -285,22 +297,22 @@ TEST_CASE("imgui") {
   uint64_t fence_signal_val = 0;
   // swapchain
   const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
-  const auto swapchain_backbuffer_num = json["swapchain"]["num"].GetUint();
-  auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_backbuffer_num);
+  const auto swapchain_buffer_num = json["swapchain"]["num"].GetUint();
+  auto swapchain = CreateSwapchain(dxgi.factory, command_queue, window_info.hwnd, swapchain_format, swapchain_buffer_num);
   REQUIRE_NE(swapchain, nullptr);
   {
     const auto hr = swapchain->SetMaximumFrameLatency(frame_buffer_num);
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
-  auto swapchain_rtv = AllocateArray<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_backbuffer_num, allocator_data);
-  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_backbuffer_num, allocator_data);
-  for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+  auto swapchain_rtv = AllocateArray<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_buffer_num, allocator_data);
+  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
+  for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     REQUIRE_NE(swapchain_resources[i], nullptr);
   }
-  SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_backbuffer_num, L"swapchain");
-  auto descriptor_heap_rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, swapchain_backbuffer_num, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+  SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
+  auto descriptor_heap_rtv = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, swapchain_buffer_num, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
   {
     const auto descriptor_handle_heap_info_cpu = GetDescriptorHandleHeapInfoCpu(descriptor_heap_rtv, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, device);
     const D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {
@@ -308,7 +320,7 @@ TEST_CASE("imgui") {
       .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
       .Texture2D = {},
     };
-    for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+    for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
       swapchain_rtv[i] = GetDescriptorHeapHandleCpu(i, descriptor_handle_heap_info_cpu.descriptor_handle_increment_size, descriptor_handle_heap_info_cpu.descriptor_head_addr_cpu);
       device->CreateRenderTargetView(swapchain_resources[i], &rtv_desc, swapchain_rtv[i]);
     }
@@ -334,7 +346,7 @@ TEST_CASE("imgui") {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
   ImGui_ImplWin32_Init(window_info.hwnd);
   ImGui_ImplDX12_Init(device,
-                      swapchain_backbuffer_num,
+                      swapchain_buffer_num,
                       swapchain_format,
                       descriptor_heap,
                       imgui_font_handle_cpu,
@@ -433,7 +445,7 @@ TEST_CASE("imgui") {
   }
   Deallocate(command_allocator, allocator_data);
   descriptor_heap_rtv->Release();
-  for (uint32_t i = 0; i < swapchain_backbuffer_num; i++) {
+  for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i]->Release();
   }
   swapchain->Release();
@@ -443,4 +455,149 @@ TEST_CASE("imgui") {
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   ReleaseWin32Window(window_info, allocator_data);
+}
+TEST_CASE("multiple render pass") {
+  using namespace boke;
+  // allocator
+  const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
+  auto main_buffer = new std::byte[main_buffer_size_in_bytes];
+  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  const auto json = GetJson("tests/config-multipass.json", allocator_data);
+  // render pass & resource info
+  const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
+  const uint32_t swapchain_num = frame_buffer_num + 1;
+  StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};
+  StrHash primary[] = {"primary"_id,};
+  StrHash swapchain_rtv[] = {"swapchain"_id,};
+  StrHash imgui_font[] = {"imgui_font"_id,};
+  const uint32_t render_pass_info_len = 6;
+  RenderPassInfo render_pass_info[render_pass_info_len] = {
+    {
+      // gbuffer
+      .queue = "direct"_id,
+      .rtv = gbuffers,
+      .rtv_num = 4,
+      .dsv = "depth"_id,
+    },
+    {
+      // lighting
+      .queue = "direct"_id,
+      .srv = gbuffers,
+      .srv_num = 4,
+      .rtv = primary,
+      .rtv_num = 1,
+    },
+    {
+      // tonemap
+      .queue = "direct"_id,
+      .srv = primary,
+      .srv_num = 1,
+      .rtv = primary,
+      .rtv_num = 1,
+    },
+    {
+      // oetf
+      .queue = "direct"_id,
+      .srv = primary,
+      .srv_num = 1,
+      .rtv = swapchain_rtv,
+      .rtv_num = 1,
+    },
+    {
+      // imgui
+      .queue = "direct"_id,
+      .srv = imgui_font,
+      .srv_num = 1,
+      .rtv = swapchain_rtv,
+      .rtv_num = 1,
+    },
+    {
+      // present
+      .queue = "direct"_id,
+      .present = "swapchain"_id,
+    },
+  };
+  // core units
+  auto core = PrepareGfxCore(json, AdapterType::kHighPerformance, allocator_data);
+  auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
+  // resource info
+  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
+  ConfigureResourceInfo(render_pass_info_len, render_pass_info, json["resource_options"], resource_info);
+  StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
+  InitPingpongCurrentWriteIndex(resource_info, pingpong_current_write_index);
+  // resources
+  auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device, allocator_data);
+  StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  CreateResources(resource_info, gpu_memory_allocator, allocations, resources);
+  // descriptor handles
+  const auto swapchain_buffer_num = json["swapchain"]["num"].GetUint();
+  auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
+  DescriptorHandles descriptor_handles{
+    .rtv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+    .dsv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+    .srv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+  };
+  PrepareDescriptorHandles(resource_info, resources, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+  // barrier resources
+  BarrierSet barrier_set = {
+    .pingpong_current_write_index = &pingpong_current_write_index,
+    .transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+    .next_transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+  };
+  // command queue
+  auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
+  // swapchain
+  const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
+  auto swapchain = CreateSwapchain(core.dxgi_core.factory, command_queue, core.window_info.hwnd, swapchain_format, swapchain_buffer_num);
+  {
+    const auto hr = swapchain->SetMaximumFrameLatency(frame_buffer_num);
+    CHECK_UNARY(SUCCEEDED(hr));
+  }
+  auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
+  {
+    auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
+    for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
+      const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
+      auto r = GetSwapchainBuffer(swapchain, i);
+      swapchain_resources[i] = r;
+      resources[resource_id] = r;
+    }
+    SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
+    AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
+    Deallocate(swapchain_resources, allocator_data);
+  }
+  // add imgui
+  // AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1, device, descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles);
+  // frame loop
+  const uint32_t max_loop_num = 30;
+  for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
+    const auto frame_index = frame_count % frame_buffer_num;
+    for (uint32_t i = 0; i < render_pass_info_len; i++) {
+      // ProcessBarriers(render_pass_info[i]);
+      // const auto gpu_handle = PrepareShaderVisibleDescriptorHandles(render_pass_info[i]);
+      // render_pass_func[i](render_pass_info[i], gpu_handle);
+    }
+  }
+  // terminate
+  // swapchain resources need manual release
+  for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
+    const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
+    resources[resource_id]->Release();
+  }
+  swapchain->Release();
+  command_queue->Release();
+  barrier_set.transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
+  barrier_set.next_transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
+  descriptor_handles.rtv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  descriptor_handles.dsv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  descriptor_handles.srv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  ReleaseDescriptorHeaps(descriptor_heaps);
+  ReleaseAllocations(std::move(allocations), std::move(resources));
+  ReleaseGpuMemoryAllocator(gpu_memory_allocator);
+  pingpong_current_write_index.~StrHashMap<uint32_t>();
+  resource_info.~StrHashMap<ResourceInfo>();
+  device->Release();
+  ReleaseGfxCore(core, allocator_data);
+  delete[] main_buffer;
 }
