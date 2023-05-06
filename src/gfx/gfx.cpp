@@ -549,8 +549,19 @@ TEST_CASE("multiple render pass") {
     .transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
     .next_transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
   };
-  // command queue
+  // command queue & fence
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
+  auto fence = CreateFence(device);
+  auto fence_event = CreateEvent(nullptr, false, false, nullptr);
+  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num, allocator_data);
+  std::fill(fence_signal_val_list, fence_signal_val_list + frame_buffer_num, 0);
+  uint64_t fence_signal_val = 0;
+  // command allocator & list
+  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
+  for (uint32_t i = 0; i < frame_buffer_num; i++) {
+    command_allocator[i] = CreateCommandAllocator(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+  }
+  auto command_list = CreateCommandList(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
   // swapchain
   const auto swapchain_format = GetDxgiFormat(json["swapchain"]["format"].GetString());
   auto swapchain = CreateSwapchain(core.dxgi_core.factory, command_queue, core.window_info.hwnd, swapchain_format, swapchain_buffer_num);
@@ -595,6 +606,11 @@ TEST_CASE("multiple render pass") {
   }
   TermImgui();
   swapchain->Release();
+  command_list->Release();
+  for (uint32_t i = 0; i < frame_buffer_num; i++) {
+    command_allocator[i]->Release();
+  }
+  fence->Release();
   command_queue->Release();
   barrier_set.transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
   barrier_set.next_transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
