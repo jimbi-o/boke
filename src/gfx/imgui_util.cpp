@@ -24,4 +24,13 @@ void TermImgui() {
   ImGui_ImplWin32_Shutdown();
   ImGui::DestroyContext();
 }
+void InformImguiNewFrame() {
+  ImGui_ImplWin32_NewFrame();
+  ImGui::NewFrame();
+}
+void RenderImgui(D3d12CommandList* command_list, const D3D12_CPU_DESCRIPTOR_HANDLE& rtv) {
+  ImGui::Render();
+  command_list->OMSetRenderTargets(1, &rtv, false, nullptr);
+  ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list);
+}
 }

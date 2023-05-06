@@ -22,9 +22,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 namespace {
 using namespace boke;
 using DxgiSwapchain = IDXGISwapChain4;
-using D3d12Fence = ID3D12Fence1;
-using D3d12CommandAllocator = ID3D12CommandAllocator;
-using D3d12CommandList = ID3D12GraphicsCommandList7;
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) { return true; }
   switch (msg) {
@@ -168,9 +165,10 @@ auto CreateCommandList(D3d12Device* device, const D3D12_COMMAND_LIST_TYPE type) 
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return command_list;
 }
-auto StartCommandListRecording(D3d12CommandList* command_list, D3d12CommandAllocator* command_allocator) {
+auto StartCommandListRecording(D3d12CommandList* command_list, D3d12CommandAllocator* command_allocator, const uint32_t descriptor_heap_num, ID3D12DescriptorHeap** descriptor_heaps) {
   const auto hr = command_list->Reset(command_allocator, nullptr);
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  command_list->SetDescriptorHeaps(descriptor_heap_num, descriptor_heaps);
 }
 auto EndCommandListRecording(D3d12CommandList* command_list) {
   const auto hr = command_list->Close();
@@ -274,6 +272,7 @@ auto ReleaseGfxCore(GfxCoreUnit& core, boke::AllocatorData* allocator_data) {
 }
 #include "doctest/doctest.h"
 TEST_CASE("imgui") {
+  ProcessWindowMessages(); // to get rid of previous messages
   using namespace boke;
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
@@ -365,7 +364,7 @@ TEST_CASE("imgui") {
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
-    StartCommandListRecording(command_list, command_allocator[frame_index]);
+    StartCommandListRecording(command_list, command_allocator[frame_index], 1, &descriptor_heap);
 #ifndef SKIP_GPU_COMMAND_RECORDING
     {
       D3D12_TEXTURE_BARRIER barrier {
@@ -458,6 +457,7 @@ TEST_CASE("imgui") {
   ReleaseWin32Window(window_info, allocator_data);
 }
 TEST_CASE("multiple render pass") {
+  ProcessWindowMessages(); // to get rid of previous messages
   using namespace boke;
   // allocator
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
@@ -580,7 +580,7 @@ TEST_CASE("multiple render pass") {
     AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
     Deallocate(swapchain_resources, allocator_data);
   }
-  // add imgui
+  // init imgui
   {
     AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
     const auto imgui_font_cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
@@ -593,14 +593,29 @@ TEST_CASE("multiple render pass") {
   // frame loop
   const uint32_t max_loop_num = 30;
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
+    if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
+    InformImguiNewFrame();
+    // ImGui::ShowDemoWindow();
+    if (!WaitForSwapchain(swapchain_latency_object)) { break; }
+    WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
+    const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
+    StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
+    RenderImgui(command_list, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)]); // TODO move to imgui render pass
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
       // ProcessBarriers(render_pass_info[i]);
       // const auto gpu_handle = PrepareShaderVisibleDescriptorHandles(render_pass_info[i]);
       // render_pass_func[i](render_pass_info[i], gpu_handle);
     }
+    EndCommandListRecording(command_list);
+    command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
+    swapchain->Present(1, 0);
+    fence_signal_val++;
+    command_queue->Signal(fence, fence_signal_val);
+    fence_signal_val_list[frame_index] = fence_signal_val;
   }
   // terminate
+  WaitForFence(fence_event, fence, fence_signal_val);
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i]->Release();
   }

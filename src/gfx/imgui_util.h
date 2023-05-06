@@ -4,4 +4,6 @@ namespace boke {
 void InitImgui(HWND hwnd, D3d12Device* device, const uint32_t swapchain_buffer_num, const DXGI_FORMAT swapchain_format,
                ID3D12DescriptorHeap* shader_visible_descriptor_heap, const D3D12_CPU_DESCRIPTOR_HANDLE& imgui_font_cpu_handle, const D3D12_GPU_DESCRIPTOR_HANDLE imgui_font_gpu_handle);
 void TermImgui();
+void InformImguiNewFrame();
+void RenderImgui(D3d12CommandList* command_list, const D3D12_CPU_DESCRIPTOR_HANDLE& rtv);
 }
