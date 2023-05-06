@@ -131,9 +131,7 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const St
   }
   return result_num;
 }
-} // namespace
-namespace boke {
-void ProcessBarrier(const RenderPassInfo& render_pass_info, BarrierSet& barrier_set) {
+void PreprocessBarriers(const RenderPassInfo& render_pass_info, BarrierSet& barrier_set) {
   UpdateTransitionInfo(*barrier_set.next_transition_info, *barrier_set.transition_info);
   barrier_set.next_transition_info->clear();
   const uint32_t pingpong_flip_list_len = 8;
@@ -142,6 +140,108 @@ void ProcessBarrier(const RenderPassInfo& render_pass_info, BarrierSet& barrier_
   DEBUG_ASSERT(current_render_pass_pingpong_flip_list_result_len <= pingpong_flip_list_len, DebugAssert{});
   FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, *barrier_set.pingpong_current_write_index);
   ConfigureBarriersTextureTransitions(render_pass_info, *barrier_set.pingpong_current_write_index, *barrier_set.transition_info, *barrier_set.next_transition_info);
+}
+auto IsReadOnlyAccess(const D3D12_BARRIER_ACCESS access) {
+  if (access & D3D12_BARRIER_ACCESS_RENDER_TARGET) { return false; }
+  if (access & D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE) { return false; }
+  if (access & D3D12_BARRIER_ACCESS_COPY_DEST) { return false; }
+  if (access & D3D12_BARRIER_ACCESS_RESOLVE_DEST) { return false; }
+  if (access & D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE) { return false; }
+  return true;
+}
+struct ProcessBarriersImplAsset {
+  D3D12_TEXTURE_BARRIER* barriers{};
+  StrHashMap<ID3D12Resource*>* resources{};
+  const StrHashMap<BarrierTransitionInfoPerResource>& transition_info;
+  const StrHashMap<uint32_t>& pingpong_current_write_index;
+  uint32_t barrier_index{};
+};
+void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource_id, const BarrierTransitionInfoPerResource* next_transition_info) {
+  const auto& transition_info = asset->transition_info[IsReadOnlyAccess(next_transition_info->access) ?
+                                                       GetResourceIdPingpongRead(resource_id, asset->pingpong_current_write_index) : GetResourceIdPingpongWrite(resource_id, asset->pingpong_current_write_index)];
+  asset->barriers[asset->barrier_index] = D3D12_TEXTURE_BARRIER{
+    .SyncBefore = transition_info.sync,
+    .SyncAfter  = next_transition_info->sync,
+    .AccessBefore = transition_info.access,
+    .AccessAfter  = next_transition_info->access,
+    .LayoutBefore = transition_info.layout,
+    .LayoutAfter  = next_transition_info->layout,
+    .pResource = (*asset->resources)[resource_id],
+    .Subresources = {
+      .IndexOrFirstMipLevel = 0xffffffff,
+      .NumMipLevels = 0,
+      .FirstArraySlice = 0,
+      .NumArraySlices = 0,
+      .FirstPlane = 0,
+      .NumPlanes = 0,
+    },
+    .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+  };
+  asset->barrier_index++;
+}
+void InitTransitionInfoImpl(StrHashMap<BarrierTransitionInfoPerResource>* transition_info, const StrHash resource_id, const ResourceInfo* resource_info) {
+  D3D12_BARRIER_LAYOUT layout{};
+  switch (resource_info->creation_type) {
+    case ResourceCreationType::kRtv: {
+      layout = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
+      break;
+    }
+    case ResourceCreationType::kDsv: {
+      layout = D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE;
+      break;
+    }
+    case ResourceCreationType::kNone: {
+      if (resource_id == "swapchain"_id) {
+        layout = D3D12_BARRIER_LAYOUT_PRESENT;
+        break;
+      }
+      return;
+    }
+  }
+  if (resource_info->pingpong) {
+    (*transition_info)[GetPinpongResourceId(resource_id, 0)] = {
+      .sync = D3D12_BARRIER_SYNC_NONE,
+      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
+      .layout = layout,
+    };
+    (*transition_info)[GetPinpongResourceId(resource_id, 1)] = {
+      .sync = D3D12_BARRIER_SYNC_NONE,
+      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
+      .layout = layout,
+    };
+  } else {
+    (*transition_info)[resource_id] = {
+      .sync = D3D12_BARRIER_SYNC_NONE,
+      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
+      .layout = layout,
+    };
+  }
+}
+} // namespace
+namespace boke {
+void InitTransitionInfo(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<BarrierTransitionInfoPerResource>& transition_info) {
+  resource_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(InitTransitionInfoImpl, &transition_info);
+}
+void ProcessBarriers(const RenderPassInfo& render_pass_info, StrHashMap<ID3D12Resource*>& resources, BarrierSet& barrier_set, D3d12CommandList* command_list) {
+  PreprocessBarriers(render_pass_info, barrier_set);
+  if (barrier_set.next_transition_info->empty()) { return; }
+  const uint32_t barrier_num = 16;
+  DEBUG_ASSERT(barrier_set.next_transition_info->size() <= barrier_num, DebugAssert{});
+  D3D12_TEXTURE_BARRIER barriers[barrier_num]{};
+  ProcessBarriersImplAsset asset{
+    .barriers = barriers,
+    .resources = &resources,
+    .transition_info = *barrier_set.transition_info,
+    .pingpong_current_write_index = *barrier_set.pingpong_current_write_index,
+    .barrier_index = 0,
+  };
+  barrier_set.next_transition_info->iterate<ProcessBarriersImplAsset>(ProcessBarriersImpl, &asset);
+  D3D12_BARRIER_GROUP barrier_group {
+    .Type = D3D12_BARRIER_TYPE_TEXTURE,
+    .NumBarriers = asset.barrier_index,
+    .pTextureBarriers = barriers,
+  };
+  command_list->Barrier(1, &barrier_group);
 }
 }
 #include "doctest/doctest.h"

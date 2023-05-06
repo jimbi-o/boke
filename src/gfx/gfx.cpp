@@ -466,11 +466,9 @@ TEST_CASE("multiple render pass") {
   const auto json = GetJson("tests/config-multipass.json", allocator_data);
   // render pass & resource info
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
-  const uint32_t swapchain_num = frame_buffer_num + 1;
   StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};
   StrHash primary[] = {"primary"_id,};
   StrHash swapchain_rtv[] = {"swapchain"_id,};
-  StrHash imgui_font[] = {"imgui_font"_id,};
   const uint32_t render_pass_info_len = 6;
   RenderPassInfo render_pass_info[render_pass_info_len] = {
     {
@@ -507,8 +505,8 @@ TEST_CASE("multiple render pass") {
     {
       // imgui
       .queue = "direct"_id,
-      .srv = imgui_font,
-      .srv_num = 1,
+      .srv = nullptr,
+      .srv_num = 0,
       .rtv = swapchain_rtv,
       .rtv_num = 1,
     },
@@ -549,6 +547,7 @@ TEST_CASE("multiple render pass") {
     .transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
     .next_transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
   };
+  InitTransitionInfo(resource_info, *barrier_set.transition_info);
   // command queue & fence
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   auto fence = CreateFence(device);
@@ -573,7 +572,6 @@ TEST_CASE("multiple render pass") {
   auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
   {
     for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
-      const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
       swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     }
     SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
@@ -595,18 +593,26 @@ TEST_CASE("multiple render pass") {
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
+#ifndef SKIP_GPU_COMMAND_RECORDING
     InformImguiNewFrame();
-    // ImGui::ShowDemoWindow();
+    ImGui::ShowDemoWindow();
+#endif
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
+    // bind current swapchain backbuffer
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
+    resources["swapchain"_id] = swapchain_resources[swapchain_backbuffer_index];
+    (*descriptor_handles.rtv)["swapchain"_id] = (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)];
+    // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
+#ifndef SKIP_GPU_COMMAND_RECORDING
     RenderImgui(command_list, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)]); // TODO move to imgui render pass
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
-      // ProcessBarriers(render_pass_info[i]);
+      ProcessBarriers(render_pass_info[i], resources, barrier_set, command_list);
       // const auto gpu_handle = PrepareShaderVisibleDescriptorHandles(render_pass_info[i]);
       // render_pass_func[i](render_pass_info[i], gpu_handle);
     }
+#endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     swapchain->Present(1, 0);
