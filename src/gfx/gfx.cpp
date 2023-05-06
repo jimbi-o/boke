@@ -559,13 +559,11 @@ TEST_CASE("multiple render pass") {
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
+  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
   {
-    auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
     for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
       const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
-      auto r = GetSwapchainBuffer(swapchain, i);
-      swapchain_resources[i] = r;
-      resources[resource_id] = r;
+      swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     }
     SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
     AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
@@ -592,10 +590,8 @@ TEST_CASE("multiple render pass") {
     }
   }
   // terminate
-  // swapchain resources need manual release
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
-    const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
-    resources[resource_id]->Release();
+    swapchain_resources[i]->Release();
   }
   TermImgui();
   swapchain->Release();
