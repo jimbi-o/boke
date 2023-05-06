@@ -12,6 +12,7 @@
 #include "barrier_config.h"
 #include "core.h"
 #include "descriptors.h"
+#include "descriptors_shader_visible.h"
 #include "imgui_util.h"
 #include "json.h"
 #include "render_pass_info.h"
@@ -541,6 +542,14 @@ TEST_CASE("multiple render pass") {
   // descriptor handles (gpu)
   const uint32_t shader_visible_descriptor_handle_num = json["descriptor_handles"]["shader_visible_buffer_num"].GetUint();
   auto shader_visible_descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shader_visible_descriptor_handle_num, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+  ShaderVisibleDescriptorHandleInfo shader_visible_descriptor_handle_info{
+    .head_addr_cpu = shader_visible_descriptor_heap->GetCPUDescriptorHandleForHeapStart(),
+    .head_addr_gpu = shader_visible_descriptor_heap->GetGPUDescriptorHandleForHeapStart(),
+    .increment_size = descriptor_heaps.increment_size.cbv_srv_uav,
+    .reserved_handle_num = 0,
+    .total_handle_num = shader_visible_descriptor_handle_num,
+  };
+  uint32_t shader_visible_descriptor_handle_occupied_handle_num = 0;
   // barrier resources
   BarrierSet barrier_set = {
     .pingpong_current_write_index = &pingpong_current_write_index,
@@ -582,11 +591,12 @@ TEST_CASE("multiple render pass") {
   {
     AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
     const auto imgui_font_cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
-    const auto imgui_font_gpu_handle = shader_visible_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+    const auto imgui_font_gpu_handle = shader_visible_descriptor_handle_info.head_addr_gpu;
     InitImgui(core.window_info.hwnd, device, swapchain_buffer_num, swapchain_format,
               shader_visible_descriptor_heap, imgui_font_cpu_handle, imgui_font_gpu_handle);
-    const auto dst_cpu_handle = shader_visible_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+    const auto dst_cpu_handle = shader_visible_descriptor_handle_info.head_addr_cpu;
     device->CopyDescriptorsSimple(1, dst_cpu_handle, imgui_font_cpu_handle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    shader_visible_descriptor_handle_info.reserved_handle_num++;
   }
   // frame loop
   const uint32_t max_loop_num = 30;
@@ -609,8 +619,13 @@ TEST_CASE("multiple render pass") {
     RenderImgui(command_list, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)]); // TODO move to imgui render pass
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
       ProcessBarriers(render_pass_info[i], resources, barrier_set, command_list);
-      // const auto gpu_handle = PrepareShaderVisibleDescriptorHandles(render_pass_info[i]);
-      // render_pass_func[i](render_pass_info[i], gpu_handle);
+      const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(render_pass_info[i],
+                                                                              descriptor_handles,
+                                                                              pingpong_current_write_index,
+                                                                              device,
+                                                                              shader_visible_descriptor_handle_info,
+                                                                              &shader_visible_descriptor_handle_occupied_handle_num);
+      // render_pass_func[i](render_pass_info[i], gpu_handle); // TODO
     }
 #endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
