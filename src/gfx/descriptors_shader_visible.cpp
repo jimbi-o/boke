@@ -9,8 +9,7 @@
 #include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
-namespace {
-using namespace boke;
+namespace boke {
 uint32_t GetShaderVisibleDescriptorNum(const RenderPassInfo& render_pass_info) {
   return render_pass_info.srv_num;
 }
@@ -41,4 +40,4 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
   }
   device->CopyDescriptors(dst_handle_num, &dst_handle, &render_pass_info.srv_num, src_descriptor_num_index + 1, src_descriptor_handles, src_descriptor_num, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
-} // namespace
+} // namespace boke

@@ -539,6 +539,9 @@ TEST_CASE("multiple render pass") {
     .srv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
   };
   PrepareDescriptorHandles(resource_info, resources, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+  // descriptor handles (gpu)
+  const uint32_t shader_visible_descriptor_handle_num = json["descriptor_handles"]["shader_visible_buffer_num"].GetUint();
+  auto shader_visible_descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shader_visible_descriptor_handle_num, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
   // barrier resources
   BarrierSet barrier_set = {
     .pingpong_current_write_index = &pingpong_current_write_index,
@@ -568,7 +571,8 @@ TEST_CASE("multiple render pass") {
     Deallocate(swapchain_resources, allocator_data);
   }
   // add imgui
-  // AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1, device, descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles);
+  AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
+  const auto cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
   // frame loop
   const uint32_t max_loop_num = 30;
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
@@ -589,6 +593,7 @@ TEST_CASE("multiple render pass") {
   command_queue->Release();
   barrier_set.transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
   barrier_set.next_transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
+  shader_visible_descriptor_heap->Release();
   descriptor_handles.rtv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
   descriptor_handles.dsv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
   descriptor_handles.srv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();

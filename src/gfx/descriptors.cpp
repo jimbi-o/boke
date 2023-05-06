@@ -204,11 +204,11 @@ void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D
     descriptor_handles.srv->insert(resource_num == 1 ? resource_id : GetPinpongResourceId(resource_id, i), handle);
   }
 }
-ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_heap_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag) {
+ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_handle_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag) {
   ID3D12DescriptorHeap* descriptor_heap{};
   const D3D12_DESCRIPTOR_HEAP_DESC desc = {
     .Type = descriptor_heap_type,
-    .NumDescriptors = descriptor_heap_num,
+    .NumDescriptors = descriptor_handle_num,
     .Flags = descriptor_heap_flag,
   };
   auto hr = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap));
