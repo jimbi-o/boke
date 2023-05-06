@@ -23,6 +23,7 @@ set(BOKE_SRC_FILES
   gfx/descriptors.cpp
   gfx/resources.cpp
   gfx/descriptors_shader_visible.cpp
+  gfx/imgui_util.cpp
 )
 source_group("Source Files (gfx)" FILES ${BOKE_SRC_FILES})
 

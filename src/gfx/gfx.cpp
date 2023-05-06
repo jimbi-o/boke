@@ -12,6 +12,7 @@
 #include "barrier_config.h"
 #include "core.h"
 #include "descriptors.h"
+#include "imgui_util.h"
 #include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
@@ -571,8 +572,15 @@ TEST_CASE("multiple render pass") {
     Deallocate(swapchain_resources, allocator_data);
   }
   // add imgui
-  AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
-  const auto cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
+  {
+    AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
+    const auto imgui_font_cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
+    const auto imgui_font_gpu_handle = shader_visible_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+    InitImgui(core.window_info.hwnd, device, swapchain_buffer_num, swapchain_format,
+              shader_visible_descriptor_heap, imgui_font_cpu_handle, imgui_font_gpu_handle);
+    const auto dst_cpu_handle = shader_visible_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+    device->CopyDescriptorsSimple(1, dst_cpu_handle, imgui_font_cpu_handle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  }
   // frame loop
   const uint32_t max_loop_num = 30;
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
@@ -589,6 +597,7 @@ TEST_CASE("multiple render pass") {
     const auto resource_id = GetPinpongResourceId("swapchain"_id, i);
     resources[resource_id]->Release();
   }
+  TermImgui();
   swapchain->Release();
   command_queue->Release();
   barrier_set.transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
