@@ -270,6 +270,54 @@ auto ReleaseGfxCore(GfxCoreUnit& core, boke::AllocatorData* allocator_data) {
   ReleaseGfxLibraries(core.gfx_libraries);
   ReleaseWin32Window(core.window_info, allocator_data);
 }
+struct RenderPassFuncCommonParams {
+  StrHashMap<uint32_t>& pingpong_current_write_index;
+  StrHashMap<ID3D12Resource*>& resources;
+  DescriptorHandles& descriptor_handles;
+};
+struct RenderPassFuncIndividualParams {
+  RenderPassInfo& render_pass_info;
+  D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle;
+};
+void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+  // TODO
+}
+void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+  // TODO
+}
+void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {
+}
+void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+  RenderImgui(command_list, (*common_params.descriptor_handles.rtv)["swapchain"_id]);
+}
+using RenderPassFunc = void (*)(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*);
+auto GatherRenderPassFunc(const uint32_t render_pass_info_len, const RenderPassInfo* render_pass_info, RenderPassFunc* render_pass_func) {
+  for (uint32_t i = 0; i < render_pass_info_len; i++) {
+    switch (render_pass_info[i].type) {
+      case "geometry"_id: {
+        render_pass_func[i] = RenderPassGeometry;
+        break;
+      }
+      case "postprocess"_id: {
+        render_pass_func[i] = RenderPassPostProcess;
+        break;
+      }
+      case "imgui"_id: {
+        render_pass_func[i] = RenderPassImgui;
+        break;
+      }
+      case "no-op"_id: {
+        render_pass_func[i] = RenderPassNoOp;
+        break;
+      }
+      default: {
+        DEBUG_ASSERT(false, DebugAssert{});
+        render_pass_func[i] = RenderPassNoOp;
+        break;
+      }
+    }
+  }
+}
 }
 #include "doctest/doctest.h"
 TEST_CASE("imgui") {
@@ -475,6 +523,8 @@ TEST_CASE("multiple render pass") {
     {
       // gbuffer
       .queue = "direct"_id,
+      .type = "geometry"_id,
+      .material = "gbuffer"_id,
       .rtv = gbuffers,
       .rtv_num = 4,
       .dsv = "depth"_id,
@@ -482,6 +532,8 @@ TEST_CASE("multiple render pass") {
     {
       // lighting
       .queue = "direct"_id,
+      .type = "postprocess"_id,
+      .material = "lighting"_id,
       .srv = gbuffers,
       .srv_num = 4,
       .rtv = primary,
@@ -490,6 +542,8 @@ TEST_CASE("multiple render pass") {
     {
       // tonemap
       .queue = "direct"_id,
+      .type = "postprocess"_id,
+      .material = "tonemap"_id,
       .srv = primary,
       .srv_num = 1,
       .rtv = primary,
@@ -498,6 +552,8 @@ TEST_CASE("multiple render pass") {
     {
       // oetf
       .queue = "direct"_id,
+      .type = "postprocess"_id,
+      .material = "oetf"_id,
       .srv = primary,
       .srv_num = 1,
       .rtv = swapchain_rtv,
@@ -506,6 +562,7 @@ TEST_CASE("multiple render pass") {
     {
       // imgui
       .queue = "direct"_id,
+      .type = "imgui"_id,
       .srv = nullptr,
       .srv_num = 0,
       .rtv = swapchain_rtv,
@@ -514,6 +571,7 @@ TEST_CASE("multiple render pass") {
     {
       // present
       .queue = "direct"_id,
+      .type = "no-op"_id,
       .present = "swapchain"_id,
     },
   };
@@ -587,6 +645,9 @@ TEST_CASE("multiple render pass") {
     AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
     Deallocate(swapchain_resources, allocator_data);
   }
+  // render pass
+  auto render_pass_func = AllocateArray<RenderPassFunc>(render_pass_info_len, allocator_data);
+  GatherRenderPassFunc(render_pass_info_len, render_pass_info, render_pass_func);
   // init imgui
   {
     AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
@@ -600,6 +661,11 @@ TEST_CASE("multiple render pass") {
   }
   // frame loop
   const uint32_t max_loop_num = 30;
+  RenderPassFuncCommonParams render_pass_common_params {
+    .pingpong_current_write_index = pingpong_current_write_index,
+    .resources = resources,
+    .descriptor_handles = descriptor_handles,
+  };
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
@@ -616,7 +682,6 @@ TEST_CASE("multiple render pass") {
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
 #ifndef SKIP_GPU_COMMAND_RECORDING
-    RenderImgui(command_list, (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)]); // TODO move to imgui render pass
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
       ProcessBarriers(render_pass_info[i], resources, barrier_set, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(render_pass_info[i],
@@ -625,7 +690,7 @@ TEST_CASE("multiple render pass") {
                                                                               device,
                                                                               shader_visible_descriptor_handle_info,
                                                                               &shader_visible_descriptor_handle_occupied_handle_num);
-      // render_pass_func[i](render_pass_info[i], gpu_handle); // TODO
+      render_pass_func[i](render_pass_common_params, {render_pass_info[i], gpu_handle,}, command_list);
     }
 #endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
@@ -636,6 +701,7 @@ TEST_CASE("multiple render pass") {
     fence_signal_val_list[frame_index] = fence_signal_val;
   }
   // terminate
+  Deallocate(render_pass_func, allocator_data);
   WaitForFence(fence_event, fence, fence_signal_val);
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i]->Release();

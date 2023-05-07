@@ -2,6 +2,8 @@
 namespace boke {
 struct RenderPassInfo {
   StrHash queue{kEmptyStr};
+  StrHash type{kEmptyStr};
+  StrHash material{kEmptyStr};
   StrHash* srv{};
   uint32_t srv_num{};
   StrHash* rtv{};
