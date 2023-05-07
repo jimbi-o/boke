@@ -40,7 +40,7 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
     src_descriptor_num[src_descriptor_num_index] = 1;
     DEBUG_ASSERT(src_descriptor_num_index <= src_descriptor_num_len, DebugAssert{});
   }
-  device->CopyDescriptors(dst_handle_num, &dst_handle, &render_pass_info.srv_num, src_descriptor_num_index + 1, src_descriptor_handles, src_descriptor_num, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  device->CopyDescriptors(1, &dst_handle, &dst_handle_num, src_descriptor_num_index + 1, src_descriptor_handles, src_descriptor_num, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 } // namespace
 namespace boke {
