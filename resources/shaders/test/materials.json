@@ -8,6 +8,11 @@
   "materials": [
     {
       "name": "gbuffer",
+      "rootsig": {
+        "target": "rootsig_1_1",
+        "file": "test/rootsig-empty.hlsl",
+        "define": "ROOTSIG_EMPTY"
+      },
       "shaders": [
         {
           "input": "test/triangle_ms.hlsl",
@@ -27,6 +32,11 @@
     },
     {
       "name": "lighting",
+      "rootsig": {
+        "target": "rootsig_1_1",
+        "file": "test/rootsig-empty.hlsl",
+        "define": "ROOTSIG_EMPTY"
+      },
       "shaders": [
         {
           "input": "test/triangle_ms.hlsl",
@@ -42,6 +52,11 @@
     },
     {
       "name": "tonemap",
+      "rootsig": {
+        "target": "rootsig_1_1",
+        "file": "test/rootsig-empty.hlsl",
+        "define": "ROOTSIG_EMPTY"
+      },
       "shaders": [
         {
           "input": "test/triangle_ms.hlsl",
@@ -57,6 +72,11 @@
     },
     {
       "name": "oetf",
+      "rootsig": {
+        "target": "rootsig_1_1",
+        "file": "test/rootsig-empty.hlsl",
+        "define": "ROOTSIG_EMPTY"
+      },
       "shaders": [
         {
           "input": "test/triangle_ms.hlsl",
