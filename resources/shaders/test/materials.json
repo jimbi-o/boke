@@ -1,0 +1,74 @@
+{
+  "output_extension": "cso",
+  "output_dir": "bin",
+  "debug_output_dir": "bin/debug/",
+  "include_directories": [
+    "include"
+  ],
+  "materials": [
+    {
+      "name": "gbuffer",
+      "shaders": [
+        {
+          "input": "test/triangle_ms.hlsl",
+          "target": "ms_6_7",
+          "entry": "main",
+          "macros": {
+            "MACRO_A": "A",
+            "MACRO_B": "B"
+          }
+        },
+        {
+          "input": "test/debug_color_ps.hlsl",
+          "target": "ps_6_7",
+          "entry": "main"
+        }
+      ]
+    },
+    {
+      "name": "lighting",
+      "shaders": [
+        {
+          "input": "test/triangle_ms.hlsl",
+          "target": "ms_6_7",
+          "entry": "main"
+        },
+        {
+          "input": "test/debug_color_ps.hlsl",
+          "target": "ps_6_7",
+          "entry": "main"
+        }
+      ]
+    },
+    {
+      "name": "tonemap",
+      "shaders": [
+        {
+          "input": "test/triangle_ms.hlsl",
+          "target": "ms_6_7",
+          "entry": "main"
+        },
+        {
+          "input": "test/debug_color_ps.hlsl",
+          "target": "ps_6_7",
+          "entry": "main"
+        }
+      ]
+    },
+    {
+      "name": "oetf",
+      "shaders": [
+        {
+          "input": "test/triangle_ms.hlsl",
+          "target": "ms_6_7",
+          "entry": "main"
+        },
+        {
+          "input": "test/debug_color_ps.hlsl",
+          "target": "ps_6_7",
+          "entry": "main"
+        }
+      ]
+    }
+  ]
+}

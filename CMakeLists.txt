@@ -50,6 +50,12 @@ CPMAddPackage(
   GIT_TAG "2e5ccb114be605386fee66ccfc66d4acf48bc62b"
   DOWNLOAD_ONLY yes
 )
+CPMAddPackage(
+  NAME dxc
+  URL https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip
+  VERSION v1.7.2212.1
+  DOWNLOAD_ONLY yes
+)
 
 function(AddD3d12AgilitySDK APP_NAME)
   add_custom_command(TARGET ${APP_NAME} POST_BUILD
