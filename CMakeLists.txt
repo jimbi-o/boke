@@ -56,6 +56,12 @@ CPMAddPackage(
   VERSION v1.7.2212.1
   DOWNLOAD_ONLY yes
 )
+CPMAddPackage(
+  NAME DirectXHeaders
+  URL https://github.com/microsoft/DirectX-Headers/archive/refs/tags/v1.610.0.zip
+  VERSION v1.610.0
+  DOWNLOAD_ONLY yes
+)
 
 function(AddD3d12AgilitySDK APP_NAME)
   add_custom_command(TARGET ${APP_NAME} POST_BUILD
@@ -130,6 +136,7 @@ target_include_directories(${PROJECT_NAME}
   "${imgui_SOURCE_DIR}"
   "${d3d12_agility_SOURCE_DIR}/build/native/include"
   "${D3D12MemoryAllocator_SOURCE_DIR}/include"
+  "${DirectXHeaders_SOURCE_DIR}/include"
   private
   "src"
 )
