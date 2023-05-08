@@ -40,8 +40,8 @@ CPMAddPackage("gh:jimbi-o/tote#442826dc7ca5c9adedb02d2115b70d7c4c65f45f")
 CPMAddPackage("gh:ocornut/imgui#v1.89.5")
 CPMAddPackage(
   NAME d3d12_agility
-  URL https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.700.10-preview
-  VERSION v1.700.10-preview
+  URL https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.710.0-preview
+  VERSION v1.710.0-preview
   DOWNLOAD_ONLY yes
 )
 CPMAddPackage(
@@ -119,7 +119,6 @@ target_compile_definitions(${PROJECT_NAME}
   PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
   IMGUI_DEFINE_MATH_OPERATORS
-  USE_D3D12_AGILITY_SDK
 )
 
 target_include_directories(${PROJECT_NAME}

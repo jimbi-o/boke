@@ -19,7 +19,6 @@
 #include "resources.h"
 #include "string_util.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-#define SKIP_GPU_COMMAND_RECORDING
 namespace {
 using namespace boke;
 using DxgiSwapchain = IDXGISwapChain4;
@@ -414,7 +413,6 @@ TEST_CASE("imgui") {
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &descriptor_heap);
-#ifndef SKIP_GPU_COMMAND_RECORDING
     {
       D3D12_TEXTURE_BARRIER barrier {
         .SyncBefore = D3D12_BARRIER_SYNC_NONE,
@@ -474,7 +472,6 @@ TEST_CASE("imgui") {
       };
       command_list->Barrier(1, &barrier_group);
     }
-#endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     // https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
@@ -669,10 +666,8 @@ TEST_CASE("multiple render pass") {
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
-#ifndef SKIP_GPU_COMMAND_RECORDING
     InformImguiNewFrame();
     ImGui::ShowDemoWindow();
-#endif
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     // bind current swapchain backbuffer
@@ -681,7 +676,6 @@ TEST_CASE("multiple render pass") {
     (*descriptor_handles.rtv)["swapchain"_id] = (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)];
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
-#ifndef SKIP_GPU_COMMAND_RECORDING
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
       ProcessBarriers(render_pass_info[i], resources, barrier_set, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(render_pass_info[i],
@@ -692,7 +686,6 @@ TEST_CASE("multiple render pass") {
                                                                               &shader_visible_descriptor_handle_occupied_handle_num);
       render_pass_func[i](render_pass_common_params, {render_pass_info[i], gpu_handle,}, command_list);
     }
-#endif // SKIP_GPU_COMMAND_RECORDING
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
     swapchain->Present(1, 0);
