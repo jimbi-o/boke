@@ -44,4 +44,5 @@ target_sources(${PROJECT_NAME}
   framework.cpp
   json.cpp
   string_util.cpp
+  file.cpp
 )
