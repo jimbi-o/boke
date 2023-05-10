@@ -2,7 +2,7 @@
 #include <windows.h>
 #include "boke/allocator.h"
 #include "boke/file.h"
-namespace boke {
+namespace {
 HANDLE OpenFile(const char* filename) {
   auto file = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   return file;
@@ -21,7 +21,7 @@ DWORD ReadFileToBuffer(HANDLE file, const DWORD file_size, LPVOID buffer) {
   ReadFile(file, buffer, file_size, &bytes_read, NULL);
   return bytes_read;
 }
-char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator_data) {
+char* LoadFileToBufferImpl(const char* const filepath, boke::AllocatorData* allocator_data, uint32_t* bytes_read) {
   using namespace boke;
   auto file = OpenFile(filepath);
   auto file_size = GetFileSize(file);
@@ -33,6 +33,40 @@ char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocato
   }
   buffer[read_size] = '\0';
   CloseFile(file);
+  if (bytes_read) {
+    *bytes_read = read_size;
+  }
   return buffer;
 }
+} // namespace
+namespace boke {
+char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator_data) {
+  return LoadFileToBufferImpl(filepath, allocator_data, nullptr);
+}
+char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator_data, uint32_t* bytes_read) {
+  return LoadFileToBufferImpl(filepath, allocator_data, bytes_read);
+}
 } // namespace boke
+#include "doctest/doctest.h"
+TEST_CASE("read file") {
+  using namespace boke;
+  const uint32_t main_buffer_size_in_bytes = 16 * 1024;
+  std::byte main_buffer[main_buffer_size_in_bytes];
+  const char filepath[] = "tests/test.json";
+  auto file = OpenFile(filepath);
+  auto file_size = GetFileSize(file);
+  REQUIRE_LE(file_size, main_buffer_size_in_bytes);
+  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  auto buffer = static_cast<LPVOID>(Allocate(file_size, alignof(char), allocator_data));
+  CHECK_EQ(ReadFileToBuffer(file, file_size, buffer), file_size);
+  CloseFile(file);
+}
+TEST_CASE("load file to buffer") {
+  using namespace boke;
+  const uint32_t main_buffer_size_in_bytes = 16 * 1024;
+  std::byte main_buffer[main_buffer_size_in_bytes];
+  const char filepath[] = "tests/test.json";
+  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  auto buffer = LoadFileToBuffer(filepath, allocator_data);
+  CHECK_NE(buffer, nullptr);
+}

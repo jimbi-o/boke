@@ -9,6 +9,7 @@
     {
       "name": "gbuffer",
       "rootsig": {
+        "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
         "define": "ROOTSIG_EMPTY"
@@ -28,11 +29,15 @@
           "target": "ps_6_7",
           "entry": "main"
         }
+      ],
+      "rtv": [
+        "R8G8B8A8_UNORM"
       ]
     },
     {
       "name": "lighting",
       "rootsig": {
+        "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
         "define": "ROOTSIG_EMPTY"
@@ -48,11 +53,15 @@
           "target": "ps_6_7",
           "entry": "main"
         }
+      ],
+      "rtv": [
+        "R8G8B8A8_UNORM"
       ]
     },
     {
       "name": "tonemap",
       "rootsig": {
+        "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
         "define": "ROOTSIG_EMPTY"
@@ -68,11 +77,15 @@
           "target": "ps_6_7",
           "entry": "main"
         }
+      ],
+      "rtv": [
+        "R8G8B8A8_UNORM"
       ]
     },
     {
       "name": "oetf",
       "rootsig": {
+        "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
         "define": "ROOTSIG_EMPTY"
@@ -88,6 +101,9 @@
           "target": "ps_6_7",
           "entry": "main"
         }
+      ],
+      "rtv": [
+        "R8G8B8A8_UNORM"
       ]
     }
   ]
