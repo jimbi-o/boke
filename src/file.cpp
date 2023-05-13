@@ -1,6 +1,7 @@
 #include "json.h"
 #include <windows.h>
 #include "boke/allocator.h"
+#include "boke/debug_assert.h"
 #include "boke/file.h"
 namespace {
 HANDLE OpenFile(const char* filename) {
@@ -24,6 +25,7 @@ DWORD ReadFileToBuffer(HANDLE file, const DWORD file_size, LPVOID buffer) {
 char* LoadFileToBufferImpl(const char* const filepath, boke::AllocatorData* allocator_data, uint32_t* bytes_read) {
   using namespace boke;
   auto file = OpenFile(filepath);
+  DEBUG_ASSERT(file != 0, DebugAssert{});
   auto file_size = GetFileSize(file);
   auto buffer = AllocateArray<char>(file_size + 1, allocator_data);
   const auto read_size = ReadFileToBuffer(file, file_size, buffer);

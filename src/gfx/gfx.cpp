@@ -15,6 +15,7 @@
 #include "descriptors_shader_visible.h"
 #include "imgui_util.h"
 #include "json.h"
+#include "material.h"
 #include "render_pass_info.h"
 #include "resources.h"
 #include "string_util.h"
@@ -52,16 +53,22 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   }
   return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
+auto GetPrimarybufferSize(const rapidjson::Value& json) {
+  return Size2d{
+    .width = json["screen_width"].GetUint(),
+    .height = json["screen_height"].GetUint(),
+  };
+}
 struct WindowInfo {
   HWND hwnd{};
   LPWSTR class_name{};
   HINSTANCE h_instance{};
 };
-auto CreateWin32Window(const rapidjson::Document& json, boke::AllocatorData* allocator_data) {
-  auto title = ConvertAsciiCharToWchar(json["title"].GetString(), allocator_data);
+auto CreateWin32Window(const char* title_cstr, const Size2d& size, boke::AllocatorData* allocator_data) {
+  auto title = ConvertAsciiCharToWchar(title_cstr, allocator_data);
   WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, title, nullptr };
   ::RegisterClassExW(&wc);
-  HWND hwnd = ::CreateWindowW(wc.lpszClassName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, 0, json["screen_width"].GetInt(), json["screen_height"].GetInt(), nullptr, nullptr, wc.hInstance, nullptr);
+  HWND hwnd = ::CreateWindowW(wc.lpszClassName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, 0, size.width, size.height, nullptr, nullptr, wc.hInstance, nullptr);
   ::ShowWindow(hwnd, SW_SHOWDEFAULT);
   ::UpdateWindow(hwnd);
   return WindowInfo {
@@ -254,8 +261,8 @@ struct GfxCoreUnit {
   GfxLibraries gfx_libraries{};
   DxgiCore dxgi_core{};
 };
-auto PrepareGfxCore(const rapidjson::Document& json, const boke::AdapterType adapter_type, boke::AllocatorData* allocator_data) {
-  auto window_info = CreateWin32Window(json, allocator_data);
+auto PrepareGfxCore(const char* title, const Size2d& size, const boke::AdapterType adapter_type, boke::AllocatorData* allocator_data) {
+  auto window_info = CreateWin32Window(title, size, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi_core = InitDxgi(gfx_libraries.dxgi_library, adapter_type);
   return GfxCoreUnit {
@@ -273,20 +280,58 @@ struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
   StrHashMap<ID3D12Resource*>& resources;
   DescriptorHandles& descriptor_handles;
+  MaterialSet& material_set;
+  Size2d primarybuffer_size{};
 };
 struct RenderPassFuncIndividualParams {
   RenderPassInfo& render_pass_info;
   D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle;
 };
+void SetViewportAndScissor(const Size2d& size, D3d12CommandList* command_list) {
+  {
+    D3D12_VIEWPORT viewport{0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH};
+    command_list->RSSetViewports(1, &viewport);
+  }
+  {
+    D3D12_RECT scissor_rect{0L, 0L, static_cast<LONG>(size.width), static_cast<LONG>(size.height)};
+    command_list->RSSetScissorRects(1, &scissor_rect);
+  }
+}
+void SetRtvAndDsv(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+  const uint32_t max_rtv_num = 8;
+  D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num];
+  for (uint32_t i = 0; i < pass_params.render_pass_info.rtv_num; i++) {
+    rtv_handles[i] = (*common_params.descriptor_handles.rtv)[pass_params.render_pass_info.rtv[i]];
+  }
+  const auto need_dsv = (pass_params.render_pass_info.dsv != kEmptyStr);
+  const auto dsv_handle = need_dsv ? (*common_params.descriptor_handles.dsv)[pass_params.render_pass_info.dsv] : D3D12_CPU_DESCRIPTOR_HANDLE{};
+  command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, need_dsv, &dsv_handle);
+}
 void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
-  // TODO
+  SetViewportAndScissor(common_params.primarybuffer_size, command_list);
+  SetRtvAndDsv(common_params, pass_params, command_list);
+  const auto& material_id = pass_params.render_pass_info.material_id;
+  command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  command_list->SetGraphicsRootSignature((*common_params.material_set.rootsig_list)[material_id]);
+  command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  command_list->OMSetStencilRef(pass_params.render_pass_info.stencil_val);
+  command_list->SetPipelineState((*common_params.material_set.pso_list)[material_id]);
+  command_list->DrawIndexedInstanced(3, 1, 0, 0, 0);
 }
 void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
-  // TODO
+  SetViewportAndScissor(common_params.primarybuffer_size, command_list);
+  SetRtvAndDsv(common_params, pass_params, command_list);
+  const auto& material_id = pass_params.render_pass_info.material_id;
+  command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  command_list->SetGraphicsRootSignature((*common_params.material_set.rootsig_list)[material_id]);
+  command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  command_list->OMSetStencilRef(pass_params.render_pass_info.stencil_val);
+  command_list->SetPipelineState((*common_params.material_set.pso_list)[material_id]);
+  command_list->DrawIndexedInstanced(3, 1, 0, 0, 0);
 }
 void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {
 }
-void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams&, D3d12CommandList* command_list) {
   RenderImgui(command_list, (*common_params.descriptor_handles.rtv)["swapchain"_id]);
 }
 using RenderPassFunc = void (*)(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*);
@@ -328,7 +373,8 @@ TEST_CASE("imgui") {
   auto json = GetJson("tests/config-imgui.json", allocator_data);
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
   // core units
-  auto window_info = CreateWin32Window(json, allocator_data);
+  const auto primarybuffer_size = GetPrimarybufferSize(json);
+  auto window_info = CreateWin32Window(json["title"].GetString(), primarybuffer_size, allocator_data);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
@@ -573,7 +619,8 @@ TEST_CASE("multiple render pass") {
     },
   };
   // core units
-  auto core = PrepareGfxCore(json, AdapterType::kHighPerformance, allocator_data);
+  const auto primarybuffer_size = GetPrimarybufferSize(json);
+  auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance, allocator_data);
   auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
   // resource info
   StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
@@ -642,6 +689,15 @@ TEST_CASE("multiple render pass") {
     AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
     Deallocate(swapchain_resources, allocator_data);
   }
+  // materials
+  StrHashMap<ID3D12RootSignature*> rootsig_list(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<ID3D12PipelineState*> pso_list(GetAllocatorCallbacks(allocator_data));
+  MaterialSet material_set {
+    .rootsig_list = &rootsig_list,
+    .pso_list = &pso_list,
+  };
+  auto material_json = GetJson("tests/multi-pass-material-list.json", allocator_data);
+  CreateMaterialSet(material_json, device, allocator_data, material_set);
   // render pass
   auto render_pass_func = AllocateArray<RenderPassFunc>(render_pass_info_len, allocator_data);
   GatherRenderPassFunc(render_pass_info_len, render_pass_info, render_pass_func);
@@ -662,6 +718,8 @@ TEST_CASE("multiple render pass") {
     .pingpong_current_write_index = pingpong_current_write_index,
     .resources = resources,
     .descriptor_handles = descriptor_handles,
+    .material_set = material_set,
+    .primarybuffer_size = primarybuffer_size,
   };
   for (uint32_t frame_count = 0; frame_count < max_loop_num; frame_count++) {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }

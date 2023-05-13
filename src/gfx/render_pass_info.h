@@ -10,5 +10,7 @@ struct RenderPassInfo {
   uint32_t rtv_num{};
   StrHash  dsv{kEmptyStr};
   StrHash  present{kEmptyStr};
+  StrHash  material_id{kEmptyStr};
+  uint8_t stencil_val{};
 };
 }

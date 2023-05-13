@@ -8,6 +8,7 @@
 #include "boke/util.h"
 #include "core.h"
 #include "json.h"
+#include "material.h"
 #include "resources.h"
 namespace {
 using namespace boke;
@@ -57,7 +58,7 @@ auto LoadShaderObjectList(const rapidjson::Value& json, AllocatorData* allocator
   }
 }
 auto DeallocateShaderBytecode(D3D12_SHADER_BYTECODE& bytecode, AllocatorData* allocator_data) {
-  if (bytecode.BytecodeLength > 0) {
+  if (bytecode.pShaderBytecode) {
     Deallocate(const_cast<void*>(bytecode.pShaderBytecode), allocator_data);
   }
 }
@@ -95,6 +96,17 @@ auto CreatePso(D3d12Device* device, CD3DX12_PIPELINE_STATE_STREAM5_PARSE_HELPER&
   return pso;
 }
 } // namespace
+namespace boke {
+void CreateMaterialSet(const rapidjson::Value& json, D3d12Device* device, AllocatorData* allocator_data, MaterialSet& material_set) {
+  for (const auto& material : json.GetArray()) {
+    auto stream = CreatePsoDesc(material, device, *material_set.rootsig_list, allocator_data);
+    auto pso = CreatePso(device, stream);
+    CleanupShaderObject(stream, allocator_data);
+    const auto material_id = GetStrHash(material["name"].GetString());
+    material_set.pso_list->insert(material_id, pso);
+  }
+}
+} // namespace boke
 #include "doctest/doctest.h"
 TEST_CASE("create rootsig&pso") {
   using namespace boke;
@@ -109,7 +121,7 @@ TEST_CASE("create rootsig&pso") {
   // rootsig container
   StrHashMap<ID3D12RootSignature*> rootsig_list(GetAllocatorCallbacks(allocator_data));
   // parse json
-  const auto json = GetJson("shaders/test/material-list.json", allocator_data);
+  const auto json = GetJson("test/material-list.json", allocator_data);
   for (const auto& material : json.GetArray()) {
     auto stream = CreatePsoDesc(material, device, rootsig_list, allocator_data);
     auto pso = CreatePso(device, stream);
@@ -124,4 +136,6 @@ TEST_CASE("create rootsig&pso") {
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   delete[] main_buffer;
+}
+TEST_CASE("create materials") {
 }
