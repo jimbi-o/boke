@@ -25,13 +25,10 @@
           }
         },
         {
-          "input": "test/debug_color_ps.hlsl",
+          "input": "test/debug_color_4rtv_ps.hlsl",
           "target": "ps_6_7",
           "entry": "main"
         }
-      ],
-      "rtv": [
-        "R8G8B8A8_UNORM"
       ]
     },
     {
@@ -53,9 +50,6 @@
           "target": "ps_6_7",
           "entry": "main"
         }
-      ],
-      "rtv": [
-        "R8G8B8A8_UNORM"
       ]
     },
     {
@@ -77,9 +71,6 @@
           "target": "ps_6_7",
           "entry": "main"
         }
-      ],
-      "rtv": [
-        "R8G8B8A8_UNORM"
       ]
     },
     {
@@ -101,9 +92,6 @@
           "target": "ps_6_7",
           "entry": "main"
         }
-      ],
-      "rtv": [
-        "R8G8B8A8_UNORM"
       ]
     }
   ]

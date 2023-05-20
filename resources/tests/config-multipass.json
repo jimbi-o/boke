@@ -1,34 +1,62 @@
 {
-  "title": "boke test",
-  "screen_width": 1980,
-  "screen_height": 1080,
+  "title": "boke multi-pass test",
   "frame_buffer_num": 2,
-  "swapchain": {
-    "num": 3,
-    "format": "R8G8B8A8_UNORM"
-  },
+  "swapchain_format": "R8G8B8A8_UNORM",
+  "max_loop_num": 15,
   "descriptor_handles": {
     "shader_visible_buffer_num": 1024
   },
-  "max_loop_num": 15,
   "resource_options": {
-    "common_settings": {
-      "size": [1920, 1080],
-      "format": "R8G8B8A8_UNORM"
+    "default_size": [1920, 1080],
+    "default_format": "R8G8B8A8_UNORM",
+    "primary": { "format": "R16G16B16A16_FLOAT" },
+    "gbuffer2": { "format": "R10G10B10A2_UNORM" },
+    "depth": { "format": "D24_UNORM_S8_UINT" }
+  },
+  "render_pass": [
+    {
+      "name": "gbuffer",
+      "queue": "direct",
+      "type": "geometry",
+      "material": "gbuffer",
+      "rtv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
+      "dsv": "depth"
     },
-    "options" : [
-      {
-        "name": "gbuffer2",
-        "format": "R10G10B10A2_UNORM"
-      },
-      {
-        "name": "depth",
-        "format": "D24_UNORM_S8_UINT"
-      },
-      {
-        "name": "primary",
-        "format": "R16G16B16A16_FLOAT"
-      }
-    ]
-  }
+    {
+      "name": "lighting",
+      "queue": "direct",
+      "type": "postprocess",
+      "material": "lighting",
+      "srv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
+      "rtv": ["primary"]
+    },
+    {
+      "name": "tonemap",
+      "queue": "direct",
+      "type": "postprocess",
+      "material": "tonemap",
+      "srv": ["primary"],
+      "rtv": ["primary"]
+    },
+    {
+      "name": "oetf",
+      "queue": "direct",
+      "type": "postprocess",
+      "material": "oetf",
+      "srv": ["primary"],
+      "rtv": ["swapchain"]
+    },
+    {
+      "name": "imgui",
+      "queue": "direct",
+      "type": "imgui",
+      "rtv": ["swapchain"]
+    },
+    {
+      "name": "present",
+      "queue": "direct",
+      "type": "no-op",
+      "present": "swapchain"
+    }
+  ]
 }
