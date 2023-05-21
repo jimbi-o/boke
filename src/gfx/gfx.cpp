@@ -733,6 +733,7 @@ TEST_CASE("multiple render pass") {
     }
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
+    ResetBarrierSyncAccessStatus(barrier_set);
     swapchain->Present(1, 0);
     fence_signal_val++;
     command_queue->Signal(fence, fence_signal_val);

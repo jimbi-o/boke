@@ -247,6 +247,12 @@ void ProcessBarriers(const BarrierSet& barrier_set, const StrHashMap<ID3D12Resou
   };
   command_list->Barrier(1, &barrier_group);
 }
+void ResetBarrierSyncAccessStatus(BarrierSet& barrier_set) {
+  barrier_set.transition_info->iterate([](const StrHash, BarrierTransitionInfoPerResource* info) {
+    info->sync = D3D12_BARRIER_SYNC_NONE;
+    info->access = D3D12_BARRIER_ACCESS_NO_ACCESS;
+  });
+}
 }
 #include "doctest/doctest.h"
 TEST_CASE("barrier config") {
