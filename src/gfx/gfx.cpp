@@ -63,7 +63,7 @@ auto GetSwapchainBufferSize(const rapidjson::Value& json) {
   const auto& swapchain_size = json["swapchain"]["size"];
   return Size2d{
     .width = swapchain_size[0].GetUint(),
-    .height = swapchain_size[0].GetUint(),
+    .height = swapchain_size[1].GetUint(),
   };
 }
 struct WindowInfo {
@@ -698,7 +698,7 @@ TEST_CASE("multiple render pass") {
     shader_visible_descriptor_handle_info.reserved_handle_num++;
   }
   // frame loop
-  const uint32_t max_loop_num = 30;
+  const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   RenderPassFuncCommonParams render_pass_common_params {
     .pingpong_current_write_index = pingpong_current_write_index,
     .resources = resources,
