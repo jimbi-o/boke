@@ -1,22 +1,96 @@
-{
-  "resource_options": {
-    "common_settings": {
-      "size": [1920, 1080],
-      "format": "R8G8B8A8_UNORM"
-    },
-    "options" : [
-      {
-        "name": "gbuffer2",
-        "format": "R10G10B10A2_UNORM"
-      },
-      {
-        "name": "depth",
-        "format": "D24_UNORM_S8_UINT"
-      },
-      {
-        "name": "primary",
-        "format": "R16G16B16A16_FLOAT"
-      }
-    ]
+[
+  {
+    "name": "gbuffer0",
+    "format": "R8G8B8A8_UNORM",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "rtv",
+      "srv"
+    ],
+    "pingpong": false,
+    "initial_flag": "rtv"
+  },
+  {
+    "name": "gbuffer1",
+    "format": "R8G8B8A8_UNORM",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "rtv",
+      "srv"
+    ],
+    "pingpong": false,
+    "initial_flag": "rtv"
+  },
+  {
+    "name": "gbuffer2",
+    "format": "R10G10B10A2_UNORM",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "rtv",
+      "srv"
+    ],
+    "pingpong": false,
+    "initial_flag": "rtv"
+  },
+  {
+    "name": "gbuffer3",
+    "format": "R8G8B8A8_UNORM",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "rtv",
+      "srv"
+    ],
+    "pingpong": false,
+    "initial_flag": "rtv"
+  },
+  {
+    "name": "depth",
+    "format": "D24_UNORM_S8_UINT",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "dsv"
+    ],
+    "pingpong": false,
+    "initial_flag": "dsv"
+  },
+  {
+    "name": "primary",
+    "format": "R16G16B16A16_FLOAT",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [
+      "rtv",
+      "srv"
+    ],
+    "pingpong": true,
+    "initial_flag": "rtv"
+  },
+  {
+    "name": "swapchain",
+    "format": "R8G8B8A8_UNORM",
+    "size": [
+      1920,
+      1080
+    ],
+    "flags": [],
+    "pingpong": false,
+    "initial_flag": "present"
   }
-}
+]

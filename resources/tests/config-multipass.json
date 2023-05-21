@@ -1,7 +1,10 @@
 {
   "title": "boke multi-pass test",
   "frame_buffer_num": 2,
-  "swapchain_format": "R8G8B8A8_UNORM",
+  "swapchain": {
+    "size": [1920, 1080],
+    "format": "R8G8B8A8_UNORM"
+  },
   "max_loop_num": 15,
   "descriptor_handles": {
     "shader_visible_buffer_num": 1024

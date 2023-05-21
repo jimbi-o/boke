@@ -37,7 +37,7 @@
         "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
-        "define": "ROOTSIG_EMPTY"
+        "define": "ROOTSIG_SRV"
       },
       "shaders": [
         {
@@ -58,7 +58,7 @@
         "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
-        "define": "ROOTSIG_EMPTY"
+        "define": "ROOTSIG_SRV"
       },
       "shaders": [
         {
@@ -79,7 +79,7 @@
         "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig-empty.hlsl",
-        "define": "ROOTSIG_EMPTY"
+        "define": "ROOTSIG_SRV"
       },
       "shaders": [
         {

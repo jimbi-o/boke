@@ -9,7 +9,4 @@ tote::AllocatorCallbacks<AllocatorData> GetAllocatorCallbacks(AllocatorData* all
     .user_context = allocator_data,
   };
 }
-StrHash GetStrHash(const char* const str) {
-  return foonathan::string_id::detail::sid_hash(str);
-}
 } // namespace boke

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="tote::ResizableArray&lt;*,*&gt;">
+    <DisplayString>{{ size={size_} }}</DisplayString>
+    <DisplayString>{{ capacity={capacity_} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]" ExcludeView="simple">size_</Item>
+      <Item Name="[capacity]" ExcludeView="simple">capacity_</Item>
+      <ArrayItems>
+        <Size>capacity_</Size>
+        <ValuePointer>head_</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+</AutoVisualizer>

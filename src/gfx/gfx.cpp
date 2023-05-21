@@ -59,6 +59,13 @@ auto GetPrimarybufferSize(const rapidjson::Value& json) {
     .height = json["screen_height"].GetUint(),
   };
 }
+auto GetSwapchainBufferSize(const rapidjson::Value& json) {
+  const auto& swapchain_size = json["swapchain"]["size"];
+  return Size2d{
+    .width = swapchain_size[0].GetUint(),
+    .height = swapchain_size[0].GetUint(),
+  };
+}
 struct WindowInfo {
   HWND hwnd{};
   LPWSTR class_name{};
@@ -299,38 +306,40 @@ void SetViewportAndScissor(const Size2d& size, D3d12CommandList* command_list) {
 }
 void SetRtvAndDsv(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   const uint32_t max_rtv_num = 8;
-  D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num];
+  D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num]{};
   for (uint32_t i = 0; i < pass_params.render_pass_info.rtv_num; i++) {
-    rtv_handles[i] = (*common_params.descriptor_handles.rtv)[pass_params.render_pass_info.rtv[i]];
+    rtv_handles[i] = (*common_params.descriptor_handles.rtv)[GetResourceIdPingpongWrite(pass_params.render_pass_info.rtv[i], common_params.pingpong_current_write_index)];
   }
-  const auto need_dsv = (pass_params.render_pass_info.dsv != kEmptyStr);
-  const auto dsv_handle = need_dsv ? (*common_params.descriptor_handles.dsv)[pass_params.render_pass_info.dsv] : D3D12_CPU_DESCRIPTOR_HANDLE{};
-  command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, need_dsv, &dsv_handle);
+  const auto dsv_handle = (pass_params.render_pass_info.dsv != kEmptyStr) ? &(*common_params.descriptor_handles.dsv)[pass_params.render_pass_info.dsv] : nullptr;
+  command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, dsv_handle);
 }
 void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   SetViewportAndScissor(common_params.primarybuffer_size, command_list);
   SetRtvAndDsv(common_params, pass_params, command_list);
   const auto& material_id = pass_params.render_pass_info.material_id;
   command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  command_list->SetGraphicsRootSignature((*common_params.material_set.rootsig_list)[material_id]);
-  command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  command_list->SetGraphicsRootSignature(GetRootsig(common_params.material_set, material_id));
+  if (pass_params.gpu_handle.ptr) {
+    command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  }
   command_list->OMSetStencilRef(pass_params.render_pass_info.stencil_val);
-  command_list->SetPipelineState((*common_params.material_set.pso_list)[material_id]);
-  command_list->DrawIndexedInstanced(3, 1, 0, 0, 0);
+  command_list->SetPipelineState(GetPso(common_params.material_set, material_id));
+  command_list->DispatchMesh(1, 1, 1);
 }
 void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   SetViewportAndScissor(common_params.primarybuffer_size, command_list);
   SetRtvAndDsv(common_params, pass_params, command_list);
   const auto& material_id = pass_params.render_pass_info.material_id;
   command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  command_list->SetGraphicsRootSignature((*common_params.material_set.rootsig_list)[material_id]);
-  command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  command_list->SetGraphicsRootSignature(GetRootsig(common_params.material_set, material_id));
+  if (pass_params.gpu_handle.ptr) {
+    command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
+  }
   command_list->OMSetStencilRef(pass_params.render_pass_info.stencil_val);
-  command_list->SetPipelineState((*common_params.material_set.pso_list)[material_id]);
-  command_list->DrawIndexedInstanced(3, 1, 0, 0, 0);
+  command_list->SetPipelineState(GetPso(common_params.material_set, material_id));
+  command_list->DispatchMesh(1, 1, 1);
 }
-void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {
-}
+void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {}
 void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams&, D3d12CommandList* command_list) {
   RenderImgui(command_list, (*common_params.descriptor_handles.rtv)["swapchain"_id]);
 }
@@ -361,6 +370,40 @@ auto GatherRenderPassFunc(const uint32_t render_pass_info_len, const RenderPassI
       }
     }
   }
+}
+auto GetJsonStrHash(const rapidjson::Value& json, const char* const name) {
+  if (!json.HasMember(name)) { return kEmptyStr; }
+  return GetStrHash(json[name].GetString());
+}
+StrHash* GetJsonStrHashList(const rapidjson::Value& json, const char* const name, AllocatorData* allocator_data, uint32_t* len) {
+  if (!json.HasMember(name)) {
+    *len = 0;
+    return nullptr;
+  }
+  *len = json[name].Size();
+  auto list = AllocateArray<StrHash>(*len, allocator_data);
+  for (uint32_t i = 0; i < *len; i++) {
+    const auto& elem = json[name][i];
+    list[i] = GetStrHash(elem.GetString());
+  }
+  return list;
+}
+auto ParseRenderPass(const rapidjson::Value& json, AllocatorData* allocator_data, uint32_t* render_pass_info_len) {
+  *render_pass_info_len = json.Size();
+  auto render_pass_info = AllocateArray<RenderPassInfo>(*render_pass_info_len, allocator_data);
+  for (uint32_t i = 0; i < *render_pass_info_len; i++) {
+    const auto& pass = json[i];
+    render_pass_info[i].queue = GetJsonStrHash(pass, "queue");
+    render_pass_info[i].type = GetJsonStrHash(pass, "type");
+    render_pass_info[i].material = GetJsonStrHash(pass, "material");
+    render_pass_info[i].srv = GetJsonStrHashList(pass, "srv", allocator_data, &render_pass_info[i].srv_num);
+    render_pass_info[i].rtv = GetJsonStrHashList(pass, "rtv", allocator_data, &render_pass_info[i].rtv_num);
+    render_pass_info[i].dsv = GetJsonStrHash(pass, "dsv");
+    render_pass_info[i].present = GetJsonStrHash(pass, "present");
+    render_pass_info[i].material_id = GetJsonStrHash(pass, "material");
+    render_pass_info[i].stencil_val = pass.HasMember("stencil_val") ? static_cast<uint8_t>(pass["stencil_val"].GetUint()) : 0;
+  }
+  return render_pass_info;
 }
 }
 #include "doctest/doctest.h"
@@ -555,76 +598,19 @@ TEST_CASE("multiple render pass") {
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
   auto main_buffer = new std::byte[main_buffer_size_in_bytes];
   auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  const auto json = GetJson("tests/config-multipass.json", allocator_data);
+  InitStrHashSystem(allocator_data);
+  const auto json = GetJson("tests/formatted-config-multipass.json", allocator_data);
   // render pass & resource info
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
-  StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};
-  StrHash primary[] = {"primary"_id,};
-  StrHash swapchain_rtv[] = {"swapchain"_id,};
-  const uint32_t render_pass_info_len = 6;
-  RenderPassInfo render_pass_info[render_pass_info_len] = {
-    {
-      // gbuffer
-      .queue = "direct"_id,
-      .type = "geometry"_id,
-      .material = "gbuffer"_id,
-      .rtv = gbuffers,
-      .rtv_num = 4,
-      .dsv = "depth"_id,
-    },
-    {
-      // lighting
-      .queue = "direct"_id,
-      .type = "postprocess"_id,
-      .material = "lighting"_id,
-      .srv = gbuffers,
-      .srv_num = 4,
-      .rtv = primary,
-      .rtv_num = 1,
-    },
-    {
-      // tonemap
-      .queue = "direct"_id,
-      .type = "postprocess"_id,
-      .material = "tonemap"_id,
-      .srv = primary,
-      .srv_num = 1,
-      .rtv = primary,
-      .rtv_num = 1,
-    },
-    {
-      // oetf
-      .queue = "direct"_id,
-      .type = "postprocess"_id,
-      .material = "oetf"_id,
-      .srv = primary,
-      .srv_num = 1,
-      .rtv = swapchain_rtv,
-      .rtv_num = 1,
-    },
-    {
-      // imgui
-      .queue = "direct"_id,
-      .type = "imgui"_id,
-      .srv = nullptr,
-      .srv_num = 0,
-      .rtv = swapchain_rtv,
-      .rtv_num = 1,
-    },
-    {
-      // present
-      .queue = "direct"_id,
-      .type = "no-op"_id,
-      .present = "swapchain"_id,
-    },
-  };
+  uint32_t render_pass_info_len{};
+  auto render_pass_info = ParseRenderPass(json["render_pass"], allocator_data, &render_pass_info_len);
   // core units
-  const auto primarybuffer_size = GetPrimarybufferSize(json);
+  const auto primarybuffer_size = GetSwapchainBufferSize(json);
   auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance, allocator_data);
   auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
   // resource info
   StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ConfigureResourceInfo(render_pass_info_len, render_pass_info, json["resource_options"], resource_info);
+  ParseResourceInfo(json["resource"], resource_info);
   StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
   InitPingpongCurrentWriteIndex(resource_info, pingpong_current_write_index);
   // resources
@@ -633,7 +619,7 @@ TEST_CASE("multiple render pass") {
   StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
   CreateResources(resource_info, gpu_memory_allocator, allocations, resources);
   // descriptor handles
-  const auto swapchain_buffer_num = json["swapchain"]["num"].GetUint();
+  const auto swapchain_buffer_num = frame_buffer_num + 1;
   auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
   DescriptorHandles descriptor_handles{
     .rtv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
@@ -654,7 +640,6 @@ TEST_CASE("multiple render pass") {
   uint32_t shader_visible_descriptor_handle_occupied_handle_num = 0;
   // barrier resources
   BarrierSet barrier_set = {
-    .pingpong_current_write_index = &pingpong_current_write_index,
     .transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
     .next_transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
   };
@@ -687,17 +672,17 @@ TEST_CASE("multiple render pass") {
     }
     SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
     AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
-    Deallocate(swapchain_resources, allocator_data);
   }
   // materials
+  StrHashMap<StrHash> material_rootsig_map(GetAllocatorCallbacks(allocator_data));
   StrHashMap<ID3D12RootSignature*> rootsig_list(GetAllocatorCallbacks(allocator_data));
   StrHashMap<ID3D12PipelineState*> pso_list(GetAllocatorCallbacks(allocator_data));
   MaterialSet material_set {
+    .material_rootsig_map = &material_rootsig_map,
     .rootsig_list = &rootsig_list,
     .pso_list = &pso_list,
   };
-  auto material_json = GetJson("tests/multi-pass-material-list.json", allocator_data);
-  CreateMaterialSet(material_json, device, allocator_data, material_set);
+  CreateMaterialSet(json["material"], device, allocator_data, material_set);
   // render pass
   auto render_pass_func = AllocateArray<RenderPassFunc>(render_pass_info_len, allocator_data);
   GatherRenderPassFunc(render_pass_info_len, render_pass_info, render_pass_func);
@@ -735,7 +720,10 @@ TEST_CASE("multiple render pass") {
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
     for (uint32_t i = 0; i < render_pass_info_len; i++) {
-      ProcessBarriers(render_pass_info[i], resources, barrier_set, command_list);
+      UpdateTransitionInfo(barrier_set);
+      FlipPingPongIndex(render_pass_info[i], barrier_set, pingpong_current_write_index);
+      ConfigureRenderPassBarriersTextureTransitions(render_pass_info[i], pingpong_current_write_index, barrier_set);
+      ProcessBarriers(barrier_set, resources, pingpong_current_write_index, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(render_pass_info[i],
                                                                               descriptor_handles,
                                                                               pingpong_current_write_index,
@@ -754,9 +742,11 @@ TEST_CASE("multiple render pass") {
   // terminate
   Deallocate(render_pass_func, allocator_data);
   WaitForFence(fence_event, fence, fence_signal_val);
+  ReleaseMaterialSet(material_set);
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i]->Release();
   }
+  Deallocate(swapchain_resources, allocator_data);
   TermImgui();
   swapchain->Release();
   command_list->Release();
@@ -778,5 +768,6 @@ TEST_CASE("multiple render pass") {
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   ReleaseGfxCore(core, allocator_data);
+  TermStrHashSystem(allocator_data);
   delete[] main_buffer;
 }

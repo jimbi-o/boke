@@ -9,14 +9,18 @@ def register_resource(buffer_name, resource_options):
     data["format"] = resource_options[buffer_name]["format"] if buffer_name in resource_options and "format" in resource_options[buffer_name] else resource_options["default_format"]
     data["size"] = resource_options[buffer_name]["size"] if buffer_name in resource_options and "size" in resource_options[buffer_name] else resource_options["default_size"]
     data["flags"] = []
+    data["pingpong"] = False
     return data
 
 def process_single_resource(buffer_name, buffer_type, resource_options, resource_list):
     if not buffer_name in resource_list:
         resource_list[buffer_name] = register_resource(buffer_name, resource_options)
         resource_list[buffer_name]["initial_flag"] = buffer_type
+        if buffer_name == "swapchain":
+            resource_list[buffer_name]["initial_flag"] = "present"
     if not buffer_type in resource_list[buffer_name]["flags"]:
-        resource_list[buffer_name]["flags"].append(buffer_type)
+        if buffer_name != "swapchain":
+            resource_list[buffer_name]["flags"].append(buffer_type)
 
 def iterate_resource(buffer_type, render_pass, resource_options, resource_list):
     if not buffer_type in render_pass:
@@ -27,12 +31,25 @@ def iterate_resource(buffer_type, render_pass, resource_options, resource_list):
 def process_resource(buffer_type, render_pass, resource_options, resource_list):
     if buffer_type in render_pass:
         process_single_resource(render_pass[buffer_type], buffer_type, resource_options, resource_list)
-    
+
+def check_pingpong(render_pass, resource_list):
+    if not "rtv" in render_pass:
+        return
+    if not "srv" in render_pass:
+        return
+    for rtv in render_pass["rtv"]:
+        if resource_list[rtv]["pingpong"]:
+            continue
+        for srv in render_pass["srv"]:
+            if not resource_list[srv]["pingpong"] and srv == rtv:
+                resource_list[srv]["pingpong"] = True
+
 def configure_resources(render_pass, resource_options, resource_list):
     iterate_resource("rtv", render_pass, resource_options, resource_list)
     iterate_resource("srv", render_pass, resource_options, resource_list)
     process_resource("dsv", render_pass, resource_options, resource_list)
     process_resource("present", render_pass, resource_options, resource_list)
+    check_pingpong(render_pass, resource_list)
 
 def get_output_buffer_format(render_pass, resource_list):
     output_buffer_info = {}

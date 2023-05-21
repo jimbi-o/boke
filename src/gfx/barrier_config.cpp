@@ -2,13 +2,14 @@
 #include "boke/container.h"
 #include "boke/debug_assert.h"
 #include "boke/str_hash.h"
+#include "boke/util.h"
 #include "barrier_config.h"
 #include "render_pass_info.h"
 #include "resources.h"
 namespace {
 using namespace boke;
 const uint32_t kInvalidIndex = ~0U;
-auto FlipPingPongIndex(const uint32_t list_len, const StrHash* flip_list, StrHashMap<uint32_t>& pingpong_current_write_index) {
+auto FlipPingPongIndexImpl(const uint32_t list_len, const StrHash* flip_list, StrHashMap<uint32_t>& pingpong_current_write_index) {
   for (uint32_t i = 0; i < list_len; i++) {
     const auto current_index = pingpong_current_write_index[flip_list[i]];
     pingpong_current_write_index[flip_list[i]] = (current_index == 0) ? 1 : 0;
@@ -56,9 +57,6 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
 auto UpdateTransitionInfoEntity(StrHashMap<BarrierTransitionInfoPerResource>* transition_info, const StrHash key, const BarrierTransitionInfoPerResource* value) {
   DEBUG_ASSERT(transition_info->contains(key), DebugAssert{});
   (*transition_info)[key] = *value;
-}
-auto UpdateTransitionInfo(const StrHashMap<BarrierTransitionInfoPerResource>& next_transition_info, StrHashMap<BarrierTransitionInfoPerResource>& transition_info) {
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
 }
 auto ConfigureInitialLayout(const uint32_t render_pass_num, RenderPassInfo* render_pass, const StrHashMap<uint32_t>& pingpong_current_write_index, StrHashMap<D3D12_BARRIER_LAYOUT>& resource_layout) {
   for (uint32_t i = 0; i < render_pass_num; i++) {
@@ -131,16 +129,6 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const St
   }
   return result_num;
 }
-void PreprocessBarriers(const RenderPassInfo& render_pass_info, BarrierSet& barrier_set) {
-  UpdateTransitionInfo(*barrier_set.next_transition_info, *barrier_set.transition_info);
-  barrier_set.next_transition_info->clear();
-  const uint32_t pingpong_flip_list_len = 8;
-  StrHash pingpong_flip_list[pingpong_flip_list_len]{};
-  const auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info, *barrier_set.transition_info, *barrier_set.pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
-  DEBUG_ASSERT(current_render_pass_pingpong_flip_list_result_len <= pingpong_flip_list_len, DebugAssert{});
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, *barrier_set.pingpong_current_write_index);
-  ConfigureBarriersTextureTransitions(render_pass_info, *barrier_set.pingpong_current_write_index, *barrier_set.transition_info, *barrier_set.next_transition_info);
-}
 auto IsReadOnlyAccess(const D3D12_BARRIER_ACCESS access) {
   if (access & D3D12_BARRIER_ACCESS_RENDER_TARGET) { return false; }
   if (access & D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE) { return false; }
@@ -151,14 +139,16 @@ auto IsReadOnlyAccess(const D3D12_BARRIER_ACCESS access) {
 }
 struct ProcessBarriersImplAsset {
   D3D12_TEXTURE_BARRIER* barriers{};
-  StrHashMap<ID3D12Resource*>* resources{};
+  const StrHashMap<ID3D12Resource*>& resources{};
   const StrHashMap<BarrierTransitionInfoPerResource>& transition_info;
   const StrHashMap<uint32_t>& pingpong_current_write_index;
   uint32_t barrier_index{};
 };
 void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource_id, const BarrierTransitionInfoPerResource* next_transition_info) {
-  const auto& transition_info = asset->transition_info[IsReadOnlyAccess(next_transition_info->access) ?
-                                                       GetResourceIdPingpongRead(resource_id, asset->pingpong_current_write_index) : GetResourceIdPingpongWrite(resource_id, asset->pingpong_current_write_index)];
+  DEBUG_ASSERT(asset->transition_info.contains(resource_id), DebugAssert{});
+  const auto& transition_info = asset->transition_info[resource_id];
+  DEBUG_ASSERT(asset->resources.contains(resource_id), DebugAssert{});
+  spdlog::info("{:x} {:x}->{:x}", resource_id, GetUint32(transition_info.layout), GetUint32(next_transition_info->layout));
   asset->barriers[asset->barrier_index] = D3D12_TEXTURE_BARRIER{
     .SyncBefore = transition_info.sync,
     .SyncAfter  = next_transition_info->sync,
@@ -166,7 +156,7 @@ void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource
     .AccessAfter  = next_transition_info->access,
     .LayoutBefore = transition_info.layout,
     .LayoutAfter  = next_transition_info->layout,
-    .pResource = (*asset->resources)[resource_id],
+    .pResource = asset->resources[resource_id],
     .Subresources = {
       .IndexOrFirstMipLevel = 0xffffffff,
       .NumMipLevels = 0,
@@ -222,20 +212,34 @@ namespace boke {
 void InitTransitionInfo(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<BarrierTransitionInfoPerResource>& transition_info) {
   resource_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(InitTransitionInfoImpl, &transition_info);
 }
-void ProcessBarriers(const RenderPassInfo& render_pass_info, StrHashMap<ID3D12Resource*>& resources, BarrierSet& barrier_set, D3d12CommandList* command_list) {
-  PreprocessBarriers(render_pass_info, barrier_set);
+void UpdateTransitionInfo(BarrierSet& barrier_set) {
+  barrier_set.next_transition_info->iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, barrier_set.transition_info);
+  barrier_set.next_transition_info->clear();
+}
+void FlipPingPongIndex(const RenderPassInfo& render_pass_info, const BarrierSet& barrier_set, StrHashMap<uint32_t>& pingpong_current_write_index) {
+  const uint32_t pingpong_flip_list_len = 8;
+  StrHash pingpong_flip_list[pingpong_flip_list_len]{};
+  const auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info, *barrier_set.transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
+  DEBUG_ASSERT(current_render_pass_pingpong_flip_list_result_len <= pingpong_flip_list_len, DebugAssert{});
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+}
+void ConfigureRenderPassBarriersTextureTransitions(const RenderPassInfo& render_pass_info, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierSet& barrier_set) {
+  ConfigureBarriersTextureTransitions(render_pass_info, pingpong_current_write_index, *barrier_set.transition_info, *barrier_set.next_transition_info);
+}
+void ProcessBarriers(const BarrierSet& barrier_set, const StrHashMap<ID3D12Resource*>& resources, const StrHashMap<uint32_t>& pingpong_current_write_index, D3d12CommandList* command_list) {
   if (barrier_set.next_transition_info->empty()) { return; }
   const uint32_t barrier_num = 16;
   DEBUG_ASSERT(barrier_set.next_transition_info->size() <= barrier_num, DebugAssert{});
   D3D12_TEXTURE_BARRIER barriers[barrier_num]{};
   ProcessBarriersImplAsset asset{
     .barriers = barriers,
-    .resources = &resources,
+    .resources = resources,
     .transition_info = *barrier_set.transition_info,
-    .pingpong_current_write_index = *barrier_set.pingpong_current_write_index,
+    .pingpong_current_write_index = pingpong_current_write_index,
     .barrier_index = 0,
   };
   barrier_set.next_transition_info->iterate<ProcessBarriersImplAsset>(ProcessBarriersImpl, &asset);
+  DEBUG_ASSERT(asset.barrier_index > 0, DebugAssert{});
   D3D12_BARRIER_GROUP barrier_group {
     .Type = D3D12_BARRIER_TYPE_TEXTURE,
     .NumBarriers = asset.barrier_index,
@@ -334,11 +338,11 @@ TEST_CASE("barrier config") {
   // gbuffer
   auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[0], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
   ConfigureBarriersTextureTransitions(render_pass_info[0], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 0);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   next_transition_info.clear();
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
@@ -369,7 +373,7 @@ TEST_CASE("barrier config") {
   CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
   // lighting
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[1], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
   ConfigureBarriersTextureTransitions(render_pass_info[1], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 4);
@@ -385,7 +389,7 @@ TEST_CASE("barrier config") {
   CHECK_EQ(next_transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
   CHECK_EQ(next_transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
   CHECK_EQ(next_transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   next_transition_info.clear();
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
@@ -418,14 +422,14 @@ TEST_CASE("barrier config") {
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[2], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 1);
   CHECK_EQ(pingpong_flip_list[0], "primary"_id);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 1);
   ConfigureBarriersTextureTransitions(render_pass_info[2], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 1);
   CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
   CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   next_transition_info.clear();
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
@@ -458,7 +462,7 @@ TEST_CASE("barrier config") {
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[3], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 1);
   CHECK_EQ(pingpong_flip_list[0], "primary"_id);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
   ConfigureBarriersTextureTransitions(render_pass_info[3], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 2);
@@ -468,7 +472,7 @@ TEST_CASE("barrier config") {
   CHECK_EQ(next_transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
   CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
   CHECK_EQ(next_transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   next_transition_info.clear();
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
@@ -500,11 +504,11 @@ TEST_CASE("barrier config") {
   // imgui
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[4], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
   ConfigureBarriersTextureTransitions(render_pass_info[4], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 0);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
@@ -535,14 +539,14 @@ TEST_CASE("barrier config") {
   // present
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[5], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
-  FlipPingPongIndex(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
+  FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
   ConfigureBarriersTextureTransitions(render_pass_info[5], pingpong_current_write_index, transition_info, next_transition_info);
   CHECK_EQ(next_transition_info.size(), 1);
   CHECK_EQ(next_transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
   CHECK_EQ(next_transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
   CHECK_EQ(next_transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  UpdateTransitionInfo(next_transition_info, transition_info);
+  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
   next_transition_info.clear();
   CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
   CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);

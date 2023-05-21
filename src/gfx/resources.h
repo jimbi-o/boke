@@ -23,11 +23,12 @@ struct ResourceInfo {
   bool pingpong{};
 };
 DXGI_FORMAT GetDxgiFormat(const char* format);
-StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
-void ConfigureResourceInfo(const uint32_t render_pass_info_len, RenderPassInfo* render_pass_info, const rapidjson::Value& resource_options, StrHashMap<ResourceInfo>& resource_info);
+Size2d GetSize2d(const rapidjson::Value&);
+void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info);
 void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index);
 StrHash GetPinpongResourceId(const StrHash id, const uint32_t index);
 StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
+StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
 D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data);
 void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator);
 void CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations, StrHashMap<ID3D12Resource*>& resources);

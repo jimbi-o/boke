@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="tote::HashMap&lt;*,*,*&gt;">
+    <DisplayString>{{size = {size_}}}</DisplayString>
+    <DisplayString>{{capacity = {capacity_}}}</DisplayString>
+    <Expand>
+      <Item Name="[size]" ExcludeView="simple">size_</Item>
+      <Item Name="[capacity]" ExcludeView="simple">capacity_</Item>
+      <ArrayItems>
+        <Size>capacity_</Size>
+        <ValuePointer>occupied_flags_</ValuePointer>
+      </ArrayItems>
+      <ArrayItems>
+        <Size>capacity_</Size>
+        <ValuePointer>keys_</ValuePointer>
+      </ArrayItems>
+      <ArrayItems>
+        <Size>capacity_</Size>
+        <ValuePointer>values_</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+</AutoVisualizer>

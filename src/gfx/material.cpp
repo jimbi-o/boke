@@ -8,14 +8,15 @@
 #include "boke/util.h"
 #include "core.h"
 #include "json.h"
+#include "d3d12_util.h"
 #include "material.h"
 #include "resources.h"
 namespace {
 using namespace boke;
-auto LoadRootsig(const rapidjson::Value& rootsig_json, D3d12Device* device, StrHashMap<ID3D12RootSignature*>& rootsig_list, AllocatorData* allocator_data) {
-  const auto filename = rootsig_json["file"].GetString();
-  const auto rootsig_id = GetStrHash(rootsig_json["name"].GetString());
-  if (rootsig_list.contains(rootsig_id)) { return rootsig_list[rootsig_id]; }
+std::pair<StrHash, ID3D12RootSignature*> LoadRootsig(const rapidjson::Value& rootsig_json, D3d12Device* device, StrHashMap<ID3D12RootSignature*>& rootsig_list, AllocatorData* allocator_data) {
+  const auto filename = rootsig_json.GetString();
+  const auto rootsig_id = GetStrHash(filename);
+  if (rootsig_list.contains(rootsig_id)) { return {rootsig_id, rootsig_list[rootsig_id]}; }
   uint32_t len = 0;
   const auto buffer = LoadFileToBuffer(filename, allocator_data, &len);
   DEBUG_ASSERT(buffer != nullptr, DebugAssert{});
@@ -25,7 +26,8 @@ auto LoadRootsig(const rapidjson::Value& rootsig_json, D3d12Device* device, StrH
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   rootsig_list[rootsig_id] = rootsig;
   Deallocate(buffer, allocator_data);
-  return rootsig;
+  SetD3d12Name(rootsig, filename);
+  return {rootsig_id, rootsig};
 }
 auto LoadShaderObjectList(const rapidjson::Value& json, AllocatorData* allocator_data, CD3DX12_PIPELINE_STATE_STREAM5_PARSE_HELPER& stream) {
   for (auto& shader : json.GetArray()) {
@@ -76,9 +78,9 @@ auto SetRtvFormat(const rapidjson::Value& rtv_json, CD3DX12_PIPELINE_STATE_STREA
   }
   stream.RTVFormatsCb(array);
 }
-auto CreatePsoDesc(const rapidjson::Value& json, D3d12Device* device, StrHashMap<ID3D12RootSignature*>& rootsig_list, AllocatorData* allocator_data) {
+auto CreatePsoDesc(const rapidjson::Value& json, ID3D12RootSignature* rootsig, AllocatorData* allocator_data) {
   CD3DX12_PIPELINE_STATE_STREAM5_PARSE_HELPER stream;
-  stream.RootSignatureCb(LoadRootsig(json["rootsig"], device, rootsig_list, allocator_data));
+  stream.RootSignatureCb(rootsig);
   LoadShaderObjectList(json["shader_list"], allocator_data, stream);
   if (json.HasMember("rtv")) {
     SetRtvFormat(json["rtv"], stream);
@@ -99,12 +101,29 @@ auto CreatePso(D3d12Device* device, CD3DX12_PIPELINE_STATE_STREAM5_PARSE_HELPER&
 namespace boke {
 void CreateMaterialSet(const rapidjson::Value& json, D3d12Device* device, AllocatorData* allocator_data, MaterialSet& material_set) {
   for (const auto& material : json.GetArray()) {
-    auto stream = CreatePsoDesc(material, device, *material_set.rootsig_list, allocator_data);
+    auto [rootsig_id, rootsig] = LoadRootsig(material["rootsig"], device, *material_set.rootsig_list, allocator_data);
+    auto stream = CreatePsoDesc(material, rootsig, allocator_data);
     auto pso = CreatePso(device, stream);
     CleanupShaderObject(stream, allocator_data);
+    SetD3d12Name(pso, material["name"].GetString());
     const auto material_id = GetStrHash(material["name"].GetString());
     material_set.pso_list->insert(material_id, pso);
+    material_set.material_rootsig_map->insert(material_id, rootsig_id);
   }
+}
+void ReleaseMaterialSet(MaterialSet& material_set) {
+  material_set.rootsig_list->iterate([](const StrHash, ID3D12RootSignature** rootsig) { (*rootsig)->Release(); });
+  material_set.pso_list->iterate([](const StrHash, ID3D12PipelineState** pso) { (*pso)->Release(); });
+  material_set.rootsig_list->~StrHashMap<ID3D12RootSignature*>();
+  material_set.pso_list->~StrHashMap<ID3D12PipelineState*>();
+  material_set.material_rootsig_map->~StrHashMap<StrHash>();
+}
+ID3D12RootSignature* GetRootsig(const MaterialSet& material_set, const StrHash material_id) {
+  const auto& rootsig_id = (*material_set.material_rootsig_map)[material_id];
+  return (*material_set.rootsig_list)[rootsig_id];
+}
+ID3D12PipelineState* GetPso(const MaterialSet& material_set, const StrHash material_id) {
+  return (*material_set.pso_list)[material_id];
 }
 } // namespace boke
 #include "doctest/doctest.h"
@@ -121,9 +140,10 @@ TEST_CASE("create rootsig&pso") {
   // rootsig container
   StrHashMap<ID3D12RootSignature*> rootsig_list(GetAllocatorCallbacks(allocator_data));
   // parse json
-  const auto json = GetJson("test/material-list.json", allocator_data);
+  const auto json = GetJson("tests/test-material-list.json", allocator_data);
   for (const auto& material : json.GetArray()) {
-    auto stream = CreatePsoDesc(material, device, rootsig_list, allocator_data);
+    auto rootsig = LoadRootsig(material["rootsig"], device, rootsig_list, allocator_data);
+    auto stream = CreatePsoDesc(material, rootsig.second, allocator_data);
     auto pso = CreatePso(device, stream);
     CleanupShaderObject(stream, allocator_data);
     CHECK_NE(pso, nullptr);

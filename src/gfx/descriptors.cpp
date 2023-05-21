@@ -221,57 +221,6 @@ TEST_CASE("descriptors") {
   using namespace boke;
   // render pass & resource info
   const uint32_t swapchain_num = 3;
-  StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};
-  StrHash primary[] = {"primary"_id,};
-  StrHash swapchain[] = {"swapchain"_id,};
-  StrHash imgui_font[] = {"imgui_font"_id,};
-  const uint32_t render_pass_info_len = 6;
-  RenderPassInfo render_pass_info[render_pass_info_len] = {
-    {
-      // gbuffer
-      .queue = "direct"_id,
-      .rtv = gbuffers,
-      .rtv_num = 4,
-      .dsv = "depth"_id,
-    },
-    {
-      // lighting
-      .queue = "direct"_id,
-      .srv = gbuffers,
-      .srv_num = 4,
-      .rtv = primary,
-      .rtv_num = 1,
-    },
-    {
-      // tonemap
-      .queue = "direct"_id,
-      .srv = primary,
-      .srv_num = 1,
-      .rtv = primary,
-      .rtv_num = 1,
-    },
-    {
-      // oetf
-      .queue = "direct"_id,
-      .srv = primary,
-      .srv_num = 1,
-      .rtv = swapchain,
-      .rtv_num = 1,
-    },
-    {
-      // imgui
-      .queue = "direct"_id,
-      .srv = imgui_font,
-      .srv_num = 1,
-      .rtv = swapchain,
-      .rtv_num = 1,
-    },
-    {
-      // present
-      .queue = "direct"_id,
-      .present = "swapchain"_id,
-    },
-  };
   // allocator
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
   auto main_buffer = new std::byte[main_buffer_size_in_bytes];
@@ -281,9 +230,8 @@ TEST_CASE("descriptors") {
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   // parse resource info
-  const auto json = GetJson("tests/resources.json", allocator_data);
   StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ConfigureResourceInfo(render_pass_info_len, render_pass_info, json["resource_options"], resource_info);
+  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
   // dummy resources
   StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
   resources["gbuffer0"_id] = nullptr;

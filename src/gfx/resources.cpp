@@ -6,6 +6,7 @@
 #include "boke/str_hash.h"
 #include "boke/util.h"
 #include "core.h"
+#include "d3d12_util.h"
 #include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
@@ -108,21 +109,29 @@ void CreateResourceImpl(ResourceCreationImplAsset* asset, const StrHash resource
         auto allocation1 = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
         const auto id0 = GetPinpongResourceId(resource_id, 0);
         const auto id1 = GetPinpongResourceId(resource_id, 1);
+        SetD3d12Name(allocation0->GetResource(), resource_id, 0);
+        SetD3d12Name(allocation0->GetResource(), resource_id, 1);
         asset->allocations->insert(id0, allocation0);
         asset->allocations->insert(id1, allocation1);
         asset->resources->insert(id0, allocation0->GetResource());
         asset->resources->insert(id1, allocation1->GetResource());
+        spdlog::info("{}_{}:{:x}", GetStr(resource_id), 0, id0);
+        spdlog::info("{}_{}:{:x}", GetStr(resource_id), 1, id1);
         break;
       }
       auto allocation = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       asset->allocations->insert(resource_id, allocation);
       asset->resources->insert(resource_id, allocation->GetResource());
+      SetD3d12Name(allocation->GetResource(), resource_id);
+      spdlog::info("{}:{:x}", GetStr(resource_id), resource_id);
       break;
     }
     case ResourceCreationType::kDsv: {
       auto allocation = CreateTexture2dDsv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       asset->allocations->insert(resource_id, allocation);
       asset->resources->insert(resource_id, allocation->GetResource());
+      SetD3d12Name(allocation->GetResource(), resource_id);
+      spdlog::info("{}:{:x}", GetStr(resource_id), resource_id);
       break;
     }
     case ResourceCreationType::kNone: {
@@ -130,43 +139,38 @@ void CreateResourceImpl(ResourceCreationImplAsset* asset, const StrHash resource
     }
   }
 }
-struct ResourceOptions {
-  const rapidjson::Value* options{};
-  Size2d size{};
-  DXGI_FORMAT format{};
-};
-void FillResourceOptions(const ResourceOptions* resource_options, const StrHash resource_id, ResourceInfo* info) {
-  bool size_found = false;
-  bool format_found = false;
-  for (const auto& option : resource_options->options->GetArray()) {
-    const auto hash = GetStrHash(option["name"].GetString());
-    if (hash != resource_id) { continue; }
-    if (option.HasMember("size")) {
-      DEBUG_ASSERT(false, DebugAssert{}); // not checked yet.
-      auto& size = option["size"];
-      info->size.width  = size[0].GetUint();
-      info->size.height = size[1].GetUint();
-      size_found = true;
+auto GetCreationType(const char* const flag) {
+  if (strcmp(flag, "rtv") == 0) {
+    return ResourceCreationType::kRtv;
+  }
+  if (strcmp(flag, "dsv") == 0) {
+    return ResourceCreationType::kDsv;
+  }
+  if (strcmp(flag, "present") == 0) {
+    return ResourceCreationType::kNone;
+  }
+  DEBUG_ASSERT(false, DebugAssert{});
+  return ResourceCreationType::kNone;
+}
+auto GetResourceFlags(const rapidjson::Value& array) {
+  D3D12_RESOURCE_FLAGS flag = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+  for (const auto& entity : array.GetArray()) {
+    if ((flag & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) == 0 && strcmp(entity.GetString(), "rtv") == 0) {
+      DEBUG_ASSERT((flag & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) == 0, DebugAssert{});
+      flag |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+      continue;
     }
-    if (option.HasMember("format")) {
-      info->format = GetDxgiFormat(option["format"].GetString());
-      format_found = true;
+    if ((flag & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) == 0 && strcmp(entity.GetString(), "dsv") == 0) {
+      DEBUG_ASSERT((flag & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) == 0, DebugAssert{});
+      flag |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+      continue;
+    }
+    if ((flag & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) != 0 && strcmp(entity.GetString(), "srv") == 0) {
+      flag &= ~D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+      continue;
     }
   }
-  if (!size_found) {
-    if (info->creation_type == ResourceCreationType::kNone && resource_id != "swapchain"_id) {
-      info->size = {0, 0};
-    } else {
-      info->size = resource_options->size;
-    }
-  }
-  if (!format_found) {
-    if (info->creation_type == ResourceCreationType::kNone && resource_id != "swapchain"_id) {
-      info->format = DXGI_FORMAT_UNKNOWN;
-    } else {
-      info->format = resource_options->format;
-    }
-  }
+  return flag;
 }
 } // namespace
 namespace boke {
@@ -198,71 +202,27 @@ DXGI_FORMAT GetDxgiFormat(const char* format) {
   DEBUG_ASSERT(false, DebugAssert{});
   return DXGI_FORMAT_R8G8B8A8_UNORM;
 }
+Size2d GetSize2d(const rapidjson::Value& array) {
+  return Size2d {
+    .width = array[0].GetUint(),
+    .height = array[1].GetUint(),
+  };
+}
 StrHash GetPinpongResourceId(const StrHash id, const uint32_t index) {
   return HashInteger(id + index);
 }
-void ConfigureResourceInfo(const uint32_t render_pass_info_len, RenderPassInfo* render_pass_info, const rapidjson::Value& resource_options, StrHashMap<ResourceInfo>& resource_info) {
-  for (uint32_t i = 0; i < render_pass_info_len; i++) {
-    for (uint32_t j = 0; j < render_pass_info[i].srv_num; j++) {
-      const auto& resource_id = render_pass_info[i].srv[j];
-      if (!resource_info.contains(resource_id)) {
-        resource_info[resource_id] = {
-          .creation_type = ResourceCreationType::kNone,
-        };
-        continue;
-      }
-      resource_info[resource_id].flags &= ~D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
-      DEBUG_ASSERT((resource_info[resource_id].flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0, DebugAssert{});
-    }
-    for (uint32_t j = 0; j < render_pass_info[i].rtv_num; j++) {
-      const auto& resource_id = render_pass_info[i].rtv[j];
-      if (!resource_info.contains(resource_id)) {
-        resource_info[resource_id] = {
-          .creation_type = ResourceCreationType::kRtv,
-          .flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE,
-        };
-      } else {
-        for (uint32_t k = 0; k < render_pass_info[i].srv_num; k++) {
-          if (render_pass_info[i].srv[k] == resource_id) {
-            resource_info[resource_id].pingpong = true;
-            break;
-          }
-        }
-      }
-      DEBUG_ASSERT(resource_info[resource_id].creation_type == ResourceCreationType::kRtv, DebugAssert{});
-      DEBUG_ASSERT(resource_info[resource_id].flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, DebugAssert{});
-    }
-    if (render_pass_info[i].dsv != kEmptyStr) {
-      const auto& resource_id = render_pass_info[i].dsv;
-      if (!resource_info.contains(resource_id)) {
-        resource_info[resource_id] = {
-          .creation_type = ResourceCreationType::kDsv,
-          .flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE,
-        };
-      }
-      DEBUG_ASSERT(resource_info[resource_id].creation_type == ResourceCreationType::kDsv, DebugAssert{});
-      DEBUG_ASSERT(resource_info[resource_id].flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, DebugAssert{});
-    }
-    if (render_pass_info[i].present != kEmptyStr) {
-      const auto& resource_id = render_pass_info[i].present;
-      if (!resource_info.contains(resource_id)) {
-        resource_info[resource_id] = {
-          .creation_type = ResourceCreationType::kNone,
-        };
-      }
-      resource_info[resource_id].creation_type = ResourceCreationType::kNone;
-      resource_info[resource_id].flags = D3D12_RESOURCE_FLAG_NONE;
-    }
+void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info) {
+  for (const auto& resource : resources.GetArray()) {
+    const auto name = resource["name"].GetString();
+    const auto hash = GetStrHash(name);
+    resource_info[hash] = {
+      .creation_type = GetCreationType(resource["initial_flag"].GetString()),
+      .flags = GetResourceFlags(resource["flags"]),
+      .format = GetDxgiFormat(resource["format"].GetString()),
+      .size = GetSize2d(resource["size"]),
+      .pingpong = resource["pingpong"].GetBool(),
+    };
   }
-  ResourceOptions resource_options_parsed{};
-  {
-    resource_options_parsed.options = &resource_options["options"];
-    const auto& common_settings = resource_options["common_settings"];
-    resource_options_parsed.size.width = common_settings["size"][0].GetUint();
-    resource_options_parsed.size.height = common_settings["size"][1].GetUint();
-    resource_options_parsed.format = GetDxgiFormat(common_settings["format"].GetString());
-  }
-  resource_info.iterate<const ResourceOptions>(FillResourceOptions, &resource_options_parsed);
 }
 StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
   if (!pingpong_current_write_index.contains(id)) { return id; }
@@ -279,7 +239,7 @@ D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* 
     .pFree = GpuMemoryAllocatorDeallocate,
     .pPrivateData = allocator_data,
   };
-  ALLOCATOR_DESC allocatorDesc{
+  ALLOCATOR_DESC allocator_desc{
     .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
     .pDevice = device,
     .PreferredBlockSize = 0,
@@ -287,7 +247,7 @@ D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* 
     .pAdapter = adapter,
   };
   Allocator* allocator;
-  const auto hr = CreateAllocator(&allocatorDesc, &allocator);
+  const auto hr = CreateAllocator(&allocator_desc, &allocator);
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocator;
 }
@@ -382,12 +342,11 @@ TEST_CASE("resources") {
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   // parse resource info
-  const auto json = GetJson("tests/resources.json", allocator_data);
-  const uint32_t primary_width = json["resource_options"]["common_settings"]["size"][0].GetUint();
-  const uint32_t primary_height = json["resource_options"]["common_settings"]["size"][1].GetUint();
+  const uint32_t primary_width = 1920;
+  const uint32_t primary_height = 1080;
   StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ConfigureResourceInfo(render_pass_info_len, render_pass_info, json["resource_options"], resource_info);
-  CHECK_EQ(resource_info.size(), 8);
+  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
+  CHECK_EQ(resource_info.size(), 7);
   CHECK_EQ(resource_info["gbuffer0"_id].creation_type, ResourceCreationType::kRtv);
   CHECK_EQ(resource_info["gbuffer0"_id].flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
   CHECK_EQ(resource_info["gbuffer0"_id].format, DXGI_FORMAT_R8G8B8A8_UNORM);
@@ -424,14 +383,8 @@ TEST_CASE("resources") {
   CHECK_EQ(resource_info["primary"_id].size.width, primary_width);
   CHECK_EQ(resource_info["primary"_id].size.height, primary_height);
   CHECK_EQ(resource_info["primary"_id].pingpong, true);
-  CHECK_EQ(resource_info["imgui_font"_id].creation_type, ResourceCreationType::kNone);
-  CHECK_EQ(resource_info["imgui_font"_id].flags, D3D12_RESOURCE_FLAG_NONE);
-  CHECK_EQ(resource_info["imgui_font"_id].format, DXGI_FORMAT_UNKNOWN);
-  CHECK_EQ(resource_info["imgui_font"_id].size.width, 0);
-  CHECK_EQ(resource_info["imgui_font"_id].size.height, 0);
-  CHECK_EQ(resource_info["imgui_font"_id].pingpong, false);
   CHECK_EQ(resource_info["swapchain"_id].creation_type, ResourceCreationType::kNone);
-  CHECK_EQ(resource_info["swapchain"_id].flags, D3D12_RESOURCE_FLAG_NONE);
+  CHECK_EQ(resource_info["swapchain"_id].flags, D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE);
   CHECK_EQ(resource_info["swapchain"_id].format, DXGI_FORMAT_R8G8B8A8_UNORM);
   CHECK_EQ(resource_info["swapchain"_id].size.width, primary_width);
   CHECK_EQ(resource_info["swapchain"_id].size.height, primary_height);
@@ -467,5 +420,4 @@ TEST_CASE("resources") {
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
   delete[] main_buffer;
-  // TODO set name to resources
 }

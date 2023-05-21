@@ -1,0 +1,255 @@
+{
+    "title": "boke multi-pass test",
+    "frame_buffer_num": 2,
+    "swapchain": {
+        "size": [
+            1920,
+            1080
+        ],
+        "format": "R8G8B8A8_UNORM"
+    },
+    "max_loop_num": 15,
+    "descriptor_handles": {
+        "shader_visible_buffer_num": 1024
+    },
+    "render_pass": [
+        {
+            "name": "gbuffer",
+            "queue": "direct",
+            "type": "geometry",
+            "material": "gbuffer_e5b8f2727a22f54f",
+            "rtv": [
+                "gbuffer0",
+                "gbuffer1",
+                "gbuffer2",
+                "gbuffer3"
+            ],
+            "dsv": "depth"
+        },
+        {
+            "name": "lighting",
+            "queue": "direct",
+            "type": "postprocess",
+            "material": "lighting_38caeb8a04518dc5",
+            "srv": [
+                "gbuffer0",
+                "gbuffer1",
+                "gbuffer2",
+                "gbuffer3"
+            ],
+            "rtv": [
+                "primary"
+            ]
+        },
+        {
+            "name": "tonemap",
+            "queue": "direct",
+            "type": "postprocess",
+            "material": "tonemap_38caeb8a04518dc5",
+            "srv": [
+                "primary"
+            ],
+            "rtv": [
+                "primary"
+            ]
+        },
+        {
+            "name": "oetf",
+            "queue": "direct",
+            "type": "postprocess",
+            "material": "oetf_38caeb8a04518dc5",
+            "srv": [
+                "primary"
+            ],
+            "rtv": [
+                "swapchain"
+            ]
+        },
+        {
+            "name": "imgui",
+            "queue": "direct",
+            "type": "imgui",
+            "rtv": [
+                "swapchain"
+            ],
+            "material": ""
+        },
+        {
+            "name": "present",
+            "queue": "direct",
+            "type": "no-op",
+            "present": "swapchain",
+            "material": ""
+        }
+    ],
+    "resource": [
+        {
+            "name": "gbuffer0",
+            "format": "R8G8B8A8_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "rtv",
+                "srv"
+            ],
+            "pingpong": false,
+            "initial_flag": "rtv"
+        },
+        {
+            "name": "gbuffer1",
+            "format": "R8G8B8A8_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "rtv",
+                "srv"
+            ],
+            "pingpong": false,
+            "initial_flag": "rtv"
+        },
+        {
+            "name": "gbuffer2",
+            "format": "R10G10B10A2_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "rtv",
+                "srv"
+            ],
+            "pingpong": false,
+            "initial_flag": "rtv"
+        },
+        {
+            "name": "gbuffer3",
+            "format": "R8G8B8A8_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "rtv",
+                "srv"
+            ],
+            "pingpong": false,
+            "initial_flag": "rtv"
+        },
+        {
+            "name": "depth",
+            "format": "D24_UNORM_S8_UINT",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "dsv"
+            ],
+            "pingpong": false,
+            "initial_flag": "dsv"
+        },
+        {
+            "name": "primary",
+            "format": "R16G16B16A16_FLOAT",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "rtv",
+                "srv"
+            ],
+            "pingpong": true,
+            "initial_flag": "rtv"
+        },
+        {
+            "name": "swapchain",
+            "format": "R8G8B8A8_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [],
+            "pingpong": false,
+            "initial_flag": "present"
+        }
+    ],
+    "material": [
+        {
+            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_EMPTY.rs",
+            "shader_list": [
+                {
+                    "target": "ms",
+                    "filename": "shaders/bin/triangle_ms04b0534d48cb0122640877434e720995.cso"
+                },
+                {
+                    "target": "ps",
+                    "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
+                }
+            ],
+            "name": "gbuffer_e5b8f2727a22f54f",
+            "rtv": [
+                "R8G8B8A8_UNORM",
+                "R8G8B8A8_UNORM",
+                "R10G10B10A2_UNORM",
+                "R8G8B8A8_UNORM"
+            ],
+            "dsv": "D24_UNORM_S8_UINT"
+        },
+        {
+            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "shader_list": [
+                {
+                    "target": "ms",
+                    "filename": "shaders/bin/triangle_ms205835045faf71bbbe1a7fe1fccc7a54.cso"
+                },
+                {
+                    "target": "ps",
+                    "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
+                }
+            ],
+            "name": "lighting_38caeb8a04518dc5",
+            "rtv": [
+                "R16G16B16A16_FLOAT"
+            ]
+        },
+        {
+            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "shader_list": [
+                {
+                    "target": "ms",
+                    "filename": "shaders/bin/triangle_ms205835045faf71bbbe1a7fe1fccc7a54.cso"
+                },
+                {
+                    "target": "ps",
+                    "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
+                }
+            ],
+            "name": "tonemap_38caeb8a04518dc5",
+            "rtv": [
+                "R16G16B16A16_FLOAT"
+            ]
+        },
+        {
+            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "shader_list": [
+                {
+                    "target": "ms",
+                    "filename": "shaders/bin/triangle_ms205835045faf71bbbe1a7fe1fccc7a54.cso"
+                },
+                {
+                    "target": "ps",
+                    "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
+                }
+            ],
+            "name": "oetf_38caeb8a04518dc5",
+            "rtv": [
+                "R8G8B8A8_UNORM"
+            ]
+        }
+    ]
+}

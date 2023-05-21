@@ -25,8 +25,14 @@ set(BOKE_SRC_FILES
   gfx/descriptors_shader_visible.cpp
   gfx/imgui_util.cpp
   gfx/material.cpp
+  gfx/d3d12_util.cpp
 )
 source_group("Source Files (gfx)" FILES ${BOKE_SRC_FILES})
+set(BOKE_NATVIS_FILES
+  ../resources/configs/natvis/hashmap.natvis
+  ../resources/configs/natvis/resizable_array.natvis
+)
+source_group("Nativs Files" FILES ${BOKE_NATVIS_FILES})
 
 if (BOKE_BUILD_TESTING)
   add_library(${PROJECT_NAME} OBJECT)
@@ -37,6 +43,7 @@ target_sources(${PROJECT_NAME}
   PRIVATE
   ${BOKE_EXTERNAL_FILES}
   ${BOKE_SRC_FILES}
+  ${BOKE_NATVIS_FILES}
   allocator.cpp
   container.cpp
   util.cpp
