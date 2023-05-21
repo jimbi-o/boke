@@ -148,7 +148,7 @@ void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource
   DEBUG_ASSERT(asset->transition_info.contains(resource_id), DebugAssert{});
   const auto& transition_info = asset->transition_info[resource_id];
   DEBUG_ASSERT(asset->resources.contains(resource_id), DebugAssert{});
-  spdlog::info("{:x} {:x}->{:x}", resource_id, GetUint32(transition_info.layout), GetUint32(next_transition_info->layout));
+  // spdlog::info("{:x} {:x}->{:x}", resource_id, GetUint32(transition_info.layout), GetUint32(next_transition_info->layout));
   asset->barriers[asset->barrier_index] = D3D12_TEXTURE_BARRIER{
     .SyncBefore = transition_info.sync,
     .SyncAfter  = next_transition_info->sync,

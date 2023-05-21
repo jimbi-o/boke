@@ -17,7 +17,7 @@
             "name": "gbuffer",
             "queue": "direct",
             "type": "geometry",
-            "material": "gbuffer_e5b8f2727a22f54f",
+            "material": "gbuffer_c3f2f6fe1e67e152",
             "rtv": [
                 "gbuffer0",
                 "gbuffer1",
@@ -30,7 +30,7 @@
             "name": "lighting",
             "queue": "direct",
             "type": "postprocess",
-            "material": "lighting_38caeb8a04518dc5",
+            "material": "lighting_ed1ec3b43bcc3a27",
             "srv": [
                 "gbuffer0",
                 "gbuffer1",
@@ -45,7 +45,7 @@
             "name": "tonemap",
             "queue": "direct",
             "type": "postprocess",
-            "material": "tonemap_38caeb8a04518dc5",
+            "material": "tonemap_ed1ec3b43bcc3a27",
             "srv": [
                 "primary"
             ],
@@ -57,7 +57,7 @@
             "name": "oetf",
             "queue": "direct",
             "type": "postprocess",
-            "material": "oetf_38caeb8a04518dc5",
+            "material": "oetf_ed1ec3b43bcc3a27",
             "srv": [
                 "primary"
             ],
@@ -191,7 +191,7 @@
                     "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
                 }
             ],
-            "name": "gbuffer_e5b8f2727a22f54f",
+            "name": "gbuffer_c3f2f6fe1e67e152",
             "rtv": [
                 "R8G8B8A8_UNORM",
                 "R8G8B8A8_UNORM",
@@ -212,7 +212,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "lighting_38caeb8a04518dc5",
+            "name": "lighting_ed1ec3b43bcc3a27",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -229,7 +229,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "tonemap_38caeb8a04518dc5",
+            "name": "tonemap_ed1ec3b43bcc3a27",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -246,7 +246,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "oetf_38caeb8a04518dc5",
+            "name": "oetf_ed1ec3b43bcc3a27",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]

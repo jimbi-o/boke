@@ -710,7 +710,6 @@ TEST_CASE("multiple render pass") {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
     InformImguiNewFrame();
-    ImGui::ShowDemoWindow();
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     // bind current swapchain backbuffer
