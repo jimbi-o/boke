@@ -224,6 +224,16 @@ void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInf
     };
   }
 }
+void CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<const char*>& resource_name) {
+  resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo* info) {
+    if (info->pingpong) {
+      resource_name->insert(GetPinpongResourceId(resource_id, 0), GetStr(resource_id));
+      resource_name->insert(GetPinpongResourceId(resource_id, 1), GetStr(resource_id));
+    } else {
+      resource_name->insert(resource_id, GetStr(resource_id));
+    }
+  }, &resource_name);
+}
 StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
   if (!pingpong_current_write_index.contains(id)) { return id; }
   return GetPinpongResourceId(id, pingpong_current_write_index[id] == 0 ? 1 : 0);

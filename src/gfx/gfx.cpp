@@ -405,7 +405,56 @@ auto ParseRenderPass(const rapidjson::Value& json, AllocatorData* allocator_data
   }
   return render_pass_info;
 }
+struct IterateResourceNameForDebugBufferViewAsset {
+  static const int32_t kMaxResourceNum{32};
+  const char* buffer_name_list[kMaxResourceNum];
+  StrHash resource_strhash_list[kMaxResourceNum];
+  int32_t buffer_num{0};
+};
+void IterateResourceNameForDebugBufferView(IterateResourceNameForDebugBufferViewAsset* asset, const StrHash resource_id, const char* const * name) {
+  if (asset->buffer_num >= IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum) { return; }
+  asset->buffer_name_list[asset->buffer_num] = *name;
+  asset->resource_strhash_list[asset->buffer_num] = resource_id;
+  asset->buffer_num++;
 }
+struct UiParams {
+  StrHash debug_view_resource_id{};
+};
+void ShowGui(UiParams& params, const StrHashMap<const char*>& resource_name) {
+  if (resource_name.empty()) { return; }
+  if (!ImGui::Begin("debug buffers", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) { return; }
+  if (resource_name.size() >= IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum) {
+    spdlog::warn("resource num exceeding debug view buffer num:{}>{}", resource_name.size() , IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum);
+  }
+  IterateResourceNameForDebugBufferViewAsset asset{};
+  asset.buffer_name_list[0] = "(default)";
+  asset.resource_strhash_list[0] = kEmptyStr;
+  asset.buffer_num = 1;
+  resource_name.iterate<IterateResourceNameForDebugBufferViewAsset>(IterateResourceNameForDebugBufferView, &asset);
+  int32_t selected_buffer_index = 0;
+  for (; selected_buffer_index < asset.buffer_num; selected_buffer_index++) {
+    if (asset.resource_strhash_list[selected_buffer_index] == params.debug_view_resource_id) { break; }
+  }
+  if (ImGui::BeginCombo("view buffer name", asset.buffer_name_list[selected_buffer_index], ImGuiComboFlags_PopupAlignLeft)) {
+    for (int32_t i = 0; i < asset.buffer_num; i++) {
+      ImGui::PushID(&asset.buffer_name_list[i]);
+      const bool is_selected = (asset.resource_strhash_list[i] == params.debug_view_resource_id);
+      if (ImGui::Selectable(asset.buffer_name_list[i], is_selected)) {
+        selected_buffer_index = i;
+      }
+      if (is_selected) {
+        ImGui::SetItemDefaultFocus();
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndCombo();
+    if (selected_buffer_index >= 0 && selected_buffer_index < asset.buffer_num) {
+      params.debug_view_resource_id = asset.resource_strhash_list[selected_buffer_index];
+    }
+  }
+  ImGui::End();
+}
+} // namespace
 #include "doctest/doctest.h"
 TEST_CASE("imgui") {
   ProcessWindowMessages(); // to get rid of previous messages
@@ -613,6 +662,8 @@ TEST_CASE("multiple render pass") {
   ParseResourceInfo(json["resource"], resource_info);
   StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
   InitPingpongCurrentWriteIndex(resource_info, pingpong_current_write_index);
+  StrHashMap<const char*> resource_name(GetAllocatorCallbacks(allocator_data));
+  CollectResourceNames(resource_info, resource_name);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device, allocator_data);
   StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
@@ -697,6 +748,7 @@ TEST_CASE("multiple render pass") {
     device->CopyDescriptorsSimple(1, dst_cpu_handle, imgui_font_cpu_handle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     shader_visible_descriptor_handle_info.reserved_handle_num++;
   }
+  UiParams ui_params{};
   // frame loop
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   RenderPassFuncCommonParams render_pass_common_params {
@@ -710,6 +762,7 @@ TEST_CASE("multiple render pass") {
     if (ProcessWindowMessages() == WindowMessage::kQuit) { break; }
     const auto frame_index = frame_count % frame_buffer_num;
     InformImguiNewFrame();
+    ShowGui(ui_params, resource_name);
     if (!WaitForSwapchain(swapchain_latency_object)) { break; }
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     // bind current swapchain backbuffer
@@ -765,6 +818,7 @@ TEST_CASE("multiple render pass") {
   ReleaseAllocations(std::move(allocations), std::move(resources));
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   pingpong_current_write_index.~StrHashMap<uint32_t>();
+  resource_name.~StrHashMap<const char*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   ReleaseGfxCore(core, allocator_data);

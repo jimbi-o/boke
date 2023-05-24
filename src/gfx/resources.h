@@ -26,6 +26,7 @@ DXGI_FORMAT GetDxgiFormat(const char* format);
 Size2d GetSize2d(const rapidjson::Value&);
 void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info);
 void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index);
+void CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<const char*>& resource_name);
 StrHash GetPinpongResourceId(const StrHash id, const uint32_t index);
 StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
 StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index);
