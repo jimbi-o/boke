@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <numeric>
 #include <wchar.h>
 #include <Windows.h>
 #include "dxgi1_6.h"
@@ -420,6 +422,27 @@ void IterateResourceNameForDebugBufferView(IterateResourceNameForDebugBufferView
 struct UiParams {
   StrHash debug_view_resource_id{};
 };
+void SortBufferNames(const char** buffer_name_list, StrHash* resource_strhash_list, const uint32_t buffer_num) {
+  uint32_t indices[IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum]{};
+  if (buffer_num > IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum) {
+    spdlog::warn("SortBufferNames buffer_num too large. {} > {}", buffer_num, IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum);
+    return;
+  }
+  std::iota(indices, indices + buffer_num, 0);
+  std::sort(indices, indices + buffer_num, [=](const uint32_t i, const uint32_t j) {
+    return std::strcmp(buffer_name_list[i], buffer_name_list[j]) < 0;
+  });
+  const char* buffer_name_list_copy[IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum];
+  StrHash resource_strhash_list_copy[IterateResourceNameForDebugBufferViewAsset::kMaxResourceNum];
+  for (uint32_t i = 0; i < buffer_num; i++) {
+    buffer_name_list_copy[i] = buffer_name_list[i];
+    resource_strhash_list_copy[i] = resource_strhash_list[i];
+  }
+  for (uint32_t i = 0; i < buffer_num; i++) {
+    buffer_name_list[i] = buffer_name_list_copy[indices[i]];
+    resource_strhash_list[i] = resource_strhash_list_copy[indices[i]];
+  }
+}
 void ShowGui(UiParams& params, const StrHashMap<const char*>& resource_name) {
   if (resource_name.empty()) { return; }
   if (!ImGui::Begin("debug buffers", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) { return; }
@@ -431,6 +454,7 @@ void ShowGui(UiParams& params, const StrHashMap<const char*>& resource_name) {
   asset.resource_strhash_list[0] = kEmptyStr;
   asset.buffer_num = 1;
   resource_name.iterate<IterateResourceNameForDebugBufferViewAsset>(IterateResourceNameForDebugBufferView, &asset);
+  SortBufferNames(&asset.buffer_name_list[1], &asset.resource_strhash_list[1], asset.buffer_num - 1);
   int32_t selected_buffer_index = 0;
   for (; selected_buffer_index < asset.buffer_num; selected_buffer_index++) {
     if (asset.resource_strhash_list[selected_buffer_index] == params.debug_view_resource_id) { break; }
