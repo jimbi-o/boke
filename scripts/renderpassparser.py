@@ -79,17 +79,20 @@ def configure_material(render_pass, materials, resource_list, material_list):
     return material_name
 
 def parse_render_pass_json(input_json, materials):
-    render_pass = []
+    render_pass_list = []
     resource_list = {}
     material_list = {}
-    for input_pass in input_json["render_pass"]:
-        configure_resources(input_pass, input_json["resource_options"], resource_list)
-        pass_info = input_pass
-        pass_info["material"] = configure_material(pass_info, materials, resource_list, material_list)
-        render_pass.append(pass_info)
+    for input_pass_list in input_json["render_pass"]:
+        render_pass = []
+        for input_pass in input_pass_list["list"]:
+            configure_resources(input_pass, input_json["resource_options"], resource_list)
+            pass_info = input_pass
+            pass_info["material"] = configure_material(pass_info, materials, resource_list, material_list)
+            render_pass.append(pass_info)
+        render_pass_list.append({"name":input_pass_list["name"], "list":render_pass})
     output = input_json
     del output["resource_options"]
-    output["render_pass"] = render_pass
+    output["render_pass"] = render_pass_list
     output["resource"] = list(resource_list.values())
     output["material"] = list(material_list.values())
     return output

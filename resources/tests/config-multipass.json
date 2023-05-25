@@ -18,48 +18,78 @@
   },
   "render_pass": [
     {
-      "name": "gbuffer",
-      "queue": "direct",
-      "type": "geometry",
-      "material": "gbuffer",
-      "rtv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
-      "dsv": "depth"
+      "name": "default",
+      "list": [
+        {
+          "name": "gbuffer",
+          "queue": "direct",
+          "type": "geometry",
+          "material": "gbuffer",
+          "rtv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
+          "dsv": "depth"
+        },
+        {
+          "name": "lighting",
+          "queue": "direct",
+          "type": "postprocess",
+          "material": "lighting",
+          "srv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
+          "rtv": ["primary"]
+        },
+        {
+          "name": "tonemap",
+          "queue": "direct",
+          "type": "postprocess",
+          "material": "tonemap",
+          "srv": ["primary"],
+          "rtv": ["primary"]
+        },
+        {
+          "name": "oetf",
+          "queue": "direct",
+          "type": "postprocess",
+          "material": "oetf",
+          "srv": ["primary"],
+          "rtv": ["swapchain"]
+        },
+        {
+          "name": "imgui",
+          "queue": "direct",
+          "type": "imgui",
+          "rtv": ["swapchain"]
+        },
+        {
+          "name": "present",
+          "queue": "direct",
+          "type": "no-op",
+          "present": "swapchain"
+        }
+      ]
     },
     {
-      "name": "lighting",
-      "queue": "direct",
-      "type": "postprocess",
-      "material": "lighting",
-      "srv": ["gbuffer0", "gbuffer1", "gbuffer2", "gbuffer3"],
-      "rtv": ["primary"]
-    },
-    {
-      "name": "tonemap",
-      "queue": "direct",
-      "type": "postprocess",
-      "material": "tonemap",
-      "srv": ["primary"],
-      "rtv": ["primary"]
-    },
-    {
-      "name": "oetf",
-      "queue": "direct",
-      "type": "postprocess",
-      "material": "oetf",
-      "srv": ["primary"],
-      "rtv": ["swapchain"]
-    },
-    {
-      "name": "imgui",
-      "queue": "direct",
-      "type": "imgui",
-      "rtv": ["swapchain"]
-    },
-    {
-      "name": "present",
-      "queue": "direct",
-      "type": "no-op",
-      "present": "swapchain"
+      "name": "debug_buffer_view",
+      "list": [
+        {
+          "name": "debug_buffer_view",
+          "queue": "direct",
+          "type": "postprocess",
+          "material": "oetf",
+          "srv": ["debug_buffer_view"],
+          "rtv": ["swapchain"]
+        },
+        {
+          "name": "imgui",
+          "queue": "direct",
+          "type": "imgui",
+          "rtv": ["swapchain"]
+        },
+        {
+          "name": "present",
+          "queue": "direct",
+          "type": "no-op",
+          "present": "swapchain"
+        }
+      ]
     }
   ]
 }

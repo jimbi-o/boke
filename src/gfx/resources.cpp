@@ -149,6 +149,9 @@ auto GetCreationType(const char* const flag) {
   if (strcmp(flag, "present") == 0) {
     return ResourceCreationType::kNone;
   }
+  if (strcmp(flag, "srv") == 0) {
+    return ResourceCreationType::kNone;
+  }
   DEBUG_ASSERT(false, DebugAssert{});
   return ResourceCreationType::kNone;
 }

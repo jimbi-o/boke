@@ -93,6 +93,27 @@
           "entry": "main"
         }
       ]
+    },
+    {
+      "name": "copy-texture",
+      "rootsig": {
+        "name": "default",
+        "target": "rootsig_1_1",
+        "file": "test/rootsig-empty.hlsl",
+        "define": "ROOTSIG_SRV"
+      },
+      "shaders": [
+        {
+          "input": "test/postprocess_ms.hlsl",
+          "target": "ms_6_7",
+          "entry": "main"
+        },
+        {
+          "input": "test/copy_srv_ps.hlsl",
+          "target": "ps_6_7",
+          "entry": "main"
+        }
+      ]
     }
   ]
 }

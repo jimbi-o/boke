@@ -14,72 +14,110 @@
     },
     "render_pass": [
         {
-            "name": "gbuffer",
-            "queue": "direct",
-            "type": "geometry",
-            "material": "gbuffer_c3f2f6fe1e67e152",
-            "rtv": [
-                "gbuffer0",
-                "gbuffer1",
-                "gbuffer2",
-                "gbuffer3"
-            ],
-            "dsv": "depth"
-        },
-        {
-            "name": "lighting",
-            "queue": "direct",
-            "type": "postprocess",
-            "material": "lighting_ed1ec3b43bcc3a27",
-            "srv": [
-                "gbuffer0",
-                "gbuffer1",
-                "gbuffer2",
-                "gbuffer3"
-            ],
-            "rtv": [
-                "primary"
+            "name": "default",
+            "list": [
+                {
+                    "name": "gbuffer",
+                    "queue": "direct",
+                    "type": "geometry",
+                    "material": "gbuffer_1412b3536e095ac3",
+                    "rtv": [
+                        "gbuffer0",
+                        "gbuffer1",
+                        "gbuffer2",
+                        "gbuffer3"
+                    ],
+                    "dsv": "depth"
+                },
+                {
+                    "name": "lighting",
+                    "queue": "direct",
+                    "type": "postprocess",
+                    "material": "lighting_f640ab8943f20fca",
+                    "srv": [
+                        "gbuffer0",
+                        "gbuffer1",
+                        "gbuffer2",
+                        "gbuffer3"
+                    ],
+                    "rtv": [
+                        "primary"
+                    ]
+                },
+                {
+                    "name": "tonemap",
+                    "queue": "direct",
+                    "type": "postprocess",
+                    "material": "tonemap_f640ab8943f20fca",
+                    "srv": [
+                        "primary"
+                    ],
+                    "rtv": [
+                        "primary"
+                    ]
+                },
+                {
+                    "name": "oetf",
+                    "queue": "direct",
+                    "type": "postprocess",
+                    "material": "oetf_f640ab8943f20fca",
+                    "srv": [
+                        "primary"
+                    ],
+                    "rtv": [
+                        "swapchain"
+                    ]
+                },
+                {
+                    "name": "imgui",
+                    "queue": "direct",
+                    "type": "imgui",
+                    "rtv": [
+                        "swapchain"
+                    ],
+                    "material": ""
+                },
+                {
+                    "name": "present",
+                    "queue": "direct",
+                    "type": "no-op",
+                    "present": "swapchain",
+                    "material": ""
+                }
             ]
         },
         {
-            "name": "tonemap",
-            "queue": "direct",
-            "type": "postprocess",
-            "material": "tonemap_ed1ec3b43bcc3a27",
-            "srv": [
-                "primary"
-            ],
-            "rtv": [
-                "primary"
+            "name": "debug_buffer_view",
+            "list": [
+                {
+                    "name": "debug_buffer_view",
+                    "queue": "direct",
+                    "type": "postprocess",
+                    "material": "oetf_f640ab8943f20fca",
+                    "srv": [
+                        "debug_buffer_view"
+                    ],
+                    "rtv": [
+                        "swapchain"
+                    ]
+                },
+                {
+                    "name": "imgui",
+                    "queue": "direct",
+                    "type": "imgui",
+                    "rtv": [
+                        "swapchain"
+                    ],
+                    "material": ""
+                },
+                {
+                    "name": "present",
+                    "queue": "direct",
+                    "type": "no-op",
+                    "present": "swapchain",
+                    "material": ""
+                }
             ]
-        },
-        {
-            "name": "oetf",
-            "queue": "direct",
-            "type": "postprocess",
-            "material": "oetf_ed1ec3b43bcc3a27",
-            "srv": [
-                "primary"
-            ],
-            "rtv": [
-                "swapchain"
-            ]
-        },
-        {
-            "name": "imgui",
-            "queue": "direct",
-            "type": "imgui",
-            "rtv": [
-                "swapchain"
-            ],
-            "material": ""
-        },
-        {
-            "name": "present",
-            "queue": "direct",
-            "type": "no-op",
-            "present": "swapchain",
-            "material": ""
         }
     ],
     "resource": [
@@ -176,6 +214,19 @@
             "flags": [],
             "pingpong": false,
             "initial_flag": "present"
+        },
+        {
+            "name": "debug_buffer_view",
+            "format": "R8G8B8A8_UNORM",
+            "size": [
+                1920,
+                1080
+            ],
+            "flags": [
+                "srv"
+            ],
+            "pingpong": false,
+            "initial_flag": "srv"
         }
     ],
     "material": [
@@ -191,7 +242,7 @@
                     "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
                 }
             ],
-            "name": "gbuffer_c3f2f6fe1e67e152",
+            "name": "gbuffer_1412b3536e095ac3",
             "rtv": [
                 "R8G8B8A8_UNORM",
                 "R8G8B8A8_UNORM",
@@ -212,7 +263,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "lighting_ed1ec3b43bcc3a27",
+            "name": "lighting_f640ab8943f20fca",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -229,7 +280,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "tonemap_ed1ec3b43bcc3a27",
+            "name": "tonemap_f640ab8943f20fca",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -246,7 +297,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "oetf_ed1ec3b43bcc3a27",
+            "name": "oetf_f640ab8943f20fca",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]
