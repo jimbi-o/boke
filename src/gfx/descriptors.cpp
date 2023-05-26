@@ -74,9 +74,17 @@ auto GetDsvDesc2d(const DXGI_FORMAT format) {
     },
   };
 }
+auto GetSrvValidFormat(const DXGI_FORMAT format) {
+  switch (format) {
+    case DXGI_FORMAT_D24_UNORM_S8_UINT:
+      return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    default:
+      return format;
+  }
+}
 auto GetSrvDesc2d(const DXGI_FORMAT format) {
   return D3D12_SHADER_RESOURCE_VIEW_DESC{
-    .Format = format,
+    .Format = GetSrvValidFormat(format),
     .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
     .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
     .Texture2D = {

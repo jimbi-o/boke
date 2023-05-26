@@ -82,6 +82,14 @@ auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const
                          &clear_value,
                          0, nullptr);
 }
+auto GetTypelessFormat(const DXGI_FORMAT format) {
+  switch (format) {
+    case DXGI_FORMAT_D24_UNORM_S8_UINT:
+      return DXGI_FORMAT_R24G8_TYPELESS;
+    default:
+      return format;
+  }
+}
 auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
   D3D12_CLEAR_VALUE clear_value{
     .Format = format,
@@ -90,7 +98,7 @@ auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const
       .Stencil = 0,
     },
   };
-  return CreateTexture2d(allocator, size, format,
+  return CreateTexture2d(allocator, size, GetTypelessFormat(format),
                          flags,
                          D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
                          &clear_value,
@@ -201,6 +209,15 @@ DXGI_FORMAT GetDxgiFormat(const char* format) {
   }
   if (strcmp(format, "D24_UNORM_S8_UINT") == 0) {
     return DXGI_FORMAT_D24_UNORM_S8_UINT;
+  }
+  if (strcmp(format, "R24G8_TYPELESS") == 0) {
+    return DXGI_FORMAT_R24G8_TYPELESS;
+  }
+  if (strcmp(format, "R24_UNORM_X8_TYPELESS") == 0) {
+    return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+  }
+  if (strcmp(format, "X24_TYPELESS_G8_UINT") == 0) {
+    return DXGI_FORMAT_X24_TYPELESS_G8_UINT;
   }
   DEBUG_ASSERT(false, DebugAssert{});
   return DXGI_FORMAT_R8G8B8A8_UNORM;

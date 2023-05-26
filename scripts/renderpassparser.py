@@ -44,12 +44,19 @@ def check_pingpong(render_pass, resource_list):
             if not resource_list[srv]["pingpong"] and srv == rtv:
                 resource_list[srv]["pingpong"] = True
 
+def add_srv_to_flags(resource_list):
+    # for buffer debug view
+    for buffer in resource_list.values():
+        if not buffer["name"] == "present" and "srv" not in buffer["flags"]:
+            buffer["flags"].append("srv")
+
 def configure_resources(render_pass, resource_options, resource_list):
     iterate_resource("rtv", render_pass, resource_options, resource_list)
     iterate_resource("srv", render_pass, resource_options, resource_list)
     process_resource("dsv", render_pass, resource_options, resource_list)
     process_resource("present", render_pass, resource_options, resource_list)
     check_pingpong(render_pass, resource_list)
+    add_srv_to_flags(resource_list)
 
 def get_output_buffer_format(render_pass, resource_list):
     output_buffer_info = {}
