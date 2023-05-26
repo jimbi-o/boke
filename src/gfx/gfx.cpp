@@ -806,11 +806,11 @@ TEST_CASE("multiple render pass") {
     (*descriptor_handles.rtv)["swapchain"_id] = (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)];
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
-    const auto is_in_debug_mode = (ui_params.debug_view_resource_id != kEmptyStr);
-    if (is_in_debug_mode) {
+    const auto is_in_debug_buffer_view_mode = (ui_params.debug_view_resource_id != kEmptyStr);
+    if (is_in_debug_buffer_view_mode) {
       // TODO set srv for debug pass
     }
-    const auto current_render_pass_name = is_in_debug_mode ? "debug_buffer_view"_id : "default"_id;
+    const auto current_render_pass_name = is_in_debug_buffer_view_mode ? "debug_buffer_view"_id : "default"_id;
     const auto& current_render_pass = render_pass_list[current_render_pass_name];
     for (uint32_t i = 0; i < current_render_pass.render_pass_len; i++) {
       UpdateTransitionInfo(barrier_set);
