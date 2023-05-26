@@ -20,7 +20,7 @@
                     "name": "gbuffer",
                     "queue": "direct",
                     "type": "geometry",
-                    "material": "gbuffer_5315ed3c5568556c",
+                    "material": "gbuffer_77bc608fe8f87477",
                     "rtv": [
                         "gbuffer0",
                         "gbuffer1",
@@ -33,7 +33,7 @@
                     "name": "lighting",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "lighting_f584141b6fae313a",
+                    "material": "lighting_6dc871325f75bd8c",
                     "srv": [
                         "gbuffer0",
                         "gbuffer1",
@@ -48,7 +48,7 @@
                     "name": "tonemap",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "tonemap_f584141b6fae313a",
+                    "material": "tonemap_6dc871325f75bd8c",
                     "srv": [
                         "primary"
                     ],
@@ -60,7 +60,7 @@
                     "name": "oetf",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "oetf_f584141b6fae313a",
+                    "material": "oetf_6dc871325f75bd8c",
                     "srv": [
                         "primary"
                     ],
@@ -93,7 +93,7 @@
                     "name": "debug_buffer_view",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "copy-texture_f584141b6fae313a",
+                    "material": "copy-texture_6dc871325f75bd8c",
                     "srv": [
                         "debug_buffer_view"
                     ],
@@ -234,7 +234,7 @@
     ],
     "material": [
         {
-            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_EMPTY.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_EMPTY.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -245,7 +245,7 @@
                     "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
                 }
             ],
-            "name": "gbuffer_5315ed3c5568556c",
+            "name": "gbuffer_77bc608fe8f87477",
             "rtv": [
                 "R8G8B8A8_UNORM",
                 "R8G8B8A8_UNORM",
@@ -255,7 +255,7 @@
             "dsv": "D24_UNORM_S8_UINT"
         },
         {
-            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_SRV.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -266,13 +266,13 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "lighting_f584141b6fae313a",
+            "name": "lighting_6dc871325f75bd8c",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
         },
         {
-            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_SRV.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -283,13 +283,13 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "tonemap_f584141b6fae313a",
+            "name": "tonemap_6dc871325f75bd8c",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
         },
         {
-            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_SRV.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -300,13 +300,13 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "oetf_f584141b6fae313a",
+            "name": "oetf_6dc871325f75bd8c",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]
         },
         {
-            "rootsig": "shaders/bin/test_rootsig-emptyROOTSIG_SRV.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_SRV.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -317,7 +317,7 @@
                     "filename": "shaders/bin/copy_srv_pse88e8bf2ccc351257d5bd7f0bbb1c3d9.cso"
                 }
             ],
-            "name": "copy-texture_f584141b6fae313a",
+            "name": "copy-texture_6dc871325f75bd8c",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]

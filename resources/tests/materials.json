@@ -11,7 +11,7 @@
       "rootsig": {
         "name": "default",
         "target": "rootsig_1_1",
-        "file": "test/rootsig-empty.hlsl",
+        "file": "test/rootsig.hlsl",
         "define": "ROOTSIG_EMPTY"
       },
       "shaders": [
@@ -36,7 +36,7 @@
       "rootsig": {
         "name": "default",
         "target": "rootsig_1_1",
-        "file": "test/rootsig-empty.hlsl",
+        "file": "test/rootsig.hlsl",
         "define": "ROOTSIG_SRV"
       },
       "shaders": [
@@ -57,7 +57,7 @@
       "rootsig": {
         "name": "default",
         "target": "rootsig_1_1",
-        "file": "test/rootsig-empty.hlsl",
+        "file": "test/rootsig.hlsl",
         "define": "ROOTSIG_SRV"
       },
       "shaders": [
@@ -78,7 +78,7 @@
       "rootsig": {
         "name": "default",
         "target": "rootsig_1_1",
-        "file": "test/rootsig-empty.hlsl",
+        "file": "test/rootsig.hlsl",
         "define": "ROOTSIG_SRV"
       },
       "shaders": [
@@ -99,7 +99,7 @@
       "rootsig": {
         "name": "default",
         "target": "rootsig_1_1",
-        "file": "test/rootsig-empty.hlsl",
+        "file": "test/rootsig.hlsl",
         "define": "ROOTSIG_SRV"
       },
       "shaders": [
