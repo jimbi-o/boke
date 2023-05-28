@@ -41,9 +41,9 @@ struct HandleIndex {
 };
 struct DescriptorHandles {
   StrHashMap<HandleIndex>& handle_index;
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE>& rtv_handles;
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE>& dsv_handles;
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE>& cbv_srv_uav_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>& rtv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>& dsv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>& cbv_srv_uav_handles;
 };
 DescriptorHeapSet CreateDescriptorHeaps(const StrHashMap<ResourceInfo>& resource_info, D3d12Device* device, const DescriptorHandleNum& extra_handle_num);
 void ReleaseDescriptorHeaps(DescriptorHeapSet&);

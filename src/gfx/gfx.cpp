@@ -73,8 +73,8 @@ struct WindowInfo {
   LPWSTR class_name{};
   HINSTANCE h_instance{};
 };
-auto CreateWin32Window(const char* title_cstr, const Size2d& size, boke::AllocatorData* allocator_data) {
-  auto title = ConvertAsciiCharToWchar(title_cstr, allocator_data);
+auto CreateWin32Window(const char* title_cstr, const Size2d& size) {
+  auto title = ConvertAsciiCharToWchar(title_cstr);
   WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, title, nullptr };
   ::RegisterClassExW(&wc);
   HWND hwnd = ::CreateWindowW(wc.lpszClassName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, 0, size.width, size.height, nullptr, nullptr, wc.hInstance, nullptr);
@@ -86,10 +86,10 @@ auto CreateWin32Window(const char* title_cstr, const Size2d& size, boke::Allocat
     .h_instance = wc.hInstance,
   };
 }
-auto ReleaseWin32Window(WindowInfo& info, boke::AllocatorData* allocator_data) {
+auto ReleaseWin32Window(WindowInfo& info) {
   ::DestroyWindow(info.hwnd);
   ::UnregisterClassW(info.class_name, info.h_instance);
-  Deallocate(info.class_name, allocator_data);
+  Deallocate(info.class_name);
 }
 auto CreateCommandQueue(D3d12Device* const device, const D3D12_COMMAND_LIST_TYPE type, const D3D12_COMMAND_QUEUE_PRIORITY priority, const D3D12_COMMAND_QUEUE_FLAGS flags, const UINT node_mask = 0) {
   D3D12_COMMAND_QUEUE_DESC desc = { .Type = type, .Priority = priority, .Flags = flags, .NodeMask = node_mask, };
@@ -270,8 +270,8 @@ struct GfxCoreUnit {
   GfxLibraries gfx_libraries{};
   DxgiCore dxgi_core{};
 };
-auto PrepareGfxCore(const char* title, const Size2d& size, const boke::AdapterType adapter_type, boke::AllocatorData* allocator_data) {
-  auto window_info = CreateWin32Window(title, size, allocator_data);
+auto PrepareGfxCore(const char* title, const Size2d& size, const boke::AdapterType adapter_type) {
+  auto window_info = CreateWin32Window(title, size);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi_core = InitDxgi(gfx_libraries.dxgi_library, adapter_type);
   return GfxCoreUnit {
@@ -280,10 +280,10 @@ auto PrepareGfxCore(const char* title, const Size2d& size, const boke::AdapterTy
     .dxgi_core = dxgi_core,
   };
 }
-auto ReleaseGfxCore(GfxCoreUnit& core, boke::AllocatorData* allocator_data) {
+auto ReleaseGfxCore(GfxCoreUnit& core) {
   TermDxgi(core.dxgi_core);
   ReleaseGfxLibraries(core.gfx_libraries);
-  ReleaseWin32Window(core.window_info, allocator_data);
+  ReleaseWin32Window(core.window_info);
 }
 struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
@@ -383,29 +383,29 @@ auto GetJsonStrHash(const rapidjson::Value& json, const char* const name) {
   if (!json.HasMember(name)) { return kEmptyStr; }
   return GetStrHash(json[name].GetString());
 }
-StrHash* GetJsonStrHashList(const rapidjson::Value& json, const char* const name, AllocatorData* allocator_data, uint32_t* len) {
+StrHash* GetJsonStrHashList(const rapidjson::Value& json, const char* const name, uint32_t* len) {
   if (!json.HasMember(name)) {
     *len = 0;
     return nullptr;
   }
   *len = json[name].Size();
-  auto list = AllocateArray<StrHash>(*len, allocator_data);
+  auto list = AllocateArray<StrHash>(*len);
   for (uint32_t i = 0; i < *len; i++) {
     const auto& elem = json[name][i];
     list[i] = GetStrHash(elem.GetString());
   }
   return list;
 }
-auto ParseRenderPass(const rapidjson::Value& json, AllocatorData* allocator_data, uint32_t* render_pass_info_len) {
+auto ParseRenderPass(const rapidjson::Value& json, uint32_t* render_pass_info_len) {
   *render_pass_info_len = json.Size();
-  auto render_pass_info = AllocateArray<RenderPassInfo>(*render_pass_info_len, allocator_data);
+  auto render_pass_info = AllocateArray<RenderPassInfo>(*render_pass_info_len);
   for (uint32_t i = 0; i < *render_pass_info_len; i++) {
     const auto& pass = json[i];
     render_pass_info[i].queue = GetJsonStrHash(pass, "queue");
     render_pass_info[i].type = GetJsonStrHash(pass, "type");
     render_pass_info[i].material = GetJsonStrHash(pass, "material");
-    render_pass_info[i].srv = GetJsonStrHashList(pass, "srv", allocator_data, &render_pass_info[i].srv_num);
-    render_pass_info[i].rtv = GetJsonStrHashList(pass, "rtv", allocator_data, &render_pass_info[i].rtv_num);
+    render_pass_info[i].srv = GetJsonStrHashList(pass, "srv", &render_pass_info[i].srv_num);
+    render_pass_info[i].rtv = GetJsonStrHashList(pass, "rtv", &render_pass_info[i].rtv_num);
     render_pass_info[i].dsv = GetJsonStrHash(pass, "dsv");
     render_pass_info[i].present = GetJsonStrHash(pass, "present");
     render_pass_info[i].material_id = GetJsonStrHash(pass, "material");
@@ -418,11 +418,11 @@ struct RenderPass {
   RenderPassInfo* render_pass_info{};
   RenderPassFunc* render_pass_func{};
 };
-auto ParseRenderPassList(const rapidjson::Value& json, StrHashMap<RenderPass>& render_pass_list, AllocatorData* allocator_data) {
+auto ParseRenderPassList(const rapidjson::Value& json, StrHashMap<RenderPass>& render_pass_list) {
   for (const auto& render_pass_json : json.GetArray()) {
     RenderPass render_pass{};
-    render_pass.render_pass_info = ParseRenderPass(render_pass_json["list"], allocator_data, &render_pass.render_pass_len);
-    render_pass.render_pass_func = AllocateArray<RenderPassFunc>(render_pass.render_pass_len, allocator_data);
+    render_pass.render_pass_info = ParseRenderPass(render_pass_json["list"], &render_pass.render_pass_len);
+    render_pass.render_pass_func = AllocateArray<RenderPassFunc>(render_pass.render_pass_len);
     GatherRenderPassFunc(render_pass.render_pass_len, render_pass.render_pass_info, render_pass.render_pass_func);
     render_pass_list[GetStrHash(render_pass_json["name"].GetString())] = std::move(render_pass);
   }
@@ -505,12 +505,12 @@ TEST_CASE("imgui") {
   using namespace boke;
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto json = GetJson("tests/config-imgui.json", allocator_data);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  auto json = GetJson("tests/config-imgui.json");
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
   // core units
   const auto primarybuffer_size = GetPrimarybufferSize(json);
-  auto window_info = CreateWin32Window(json["title"].GetString(), primarybuffer_size, allocator_data);
+  auto window_info = CreateWin32Window(json["title"].GetString(), primarybuffer_size);
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
@@ -522,7 +522,7 @@ TEST_CASE("imgui") {
   REQUIRE_NE(fence, nullptr);
   auto fence_event = CreateEvent(nullptr, false, false, nullptr);
   REQUIRE_NE(fence_event, nullptr);
-  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num, allocator_data);
+  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num);
   std::fill(fence_signal_val_list, fence_signal_val_list + frame_buffer_num, 0);
   uint64_t fence_signal_val = 0;
   // swapchain
@@ -535,8 +535,8 @@ TEST_CASE("imgui") {
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
-  auto swapchain_rtv = AllocateArray<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_buffer_num, allocator_data);
-  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
+  auto swapchain_rtv = AllocateArray<D3D12_CPU_DESCRIPTOR_HANDLE>(swapchain_buffer_num);
+  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num);
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     REQUIRE_NE(swapchain_resources[i], nullptr);
@@ -556,7 +556,7 @@ TEST_CASE("imgui") {
     }
   }
   // command allocator & list
-  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
+  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
     command_allocator[i] = CreateCommandAllocator(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
     REQUIRE_NE(command_allocator[i], nullptr);
@@ -671,7 +671,7 @@ TEST_CASE("imgui") {
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
     command_allocator[i]->Release();
   }
-  Deallocate(command_allocator, allocator_data);
+  Deallocate(command_allocator);
   descriptor_heap_rtv->Release();
   for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
     swapchain_resources[i]->Release();
@@ -682,7 +682,7 @@ TEST_CASE("imgui") {
   device->Release();
   TermDxgi(dxgi);
   ReleaseGfxLibraries(gfx_libraries);
-  ReleaseWin32Window(window_info, allocator_data);
+  ReleaseWin32Window(window_info);
 }
 TEST_CASE("multiple render pass") {
   ProcessWindowMessages(); // to get rid of previous messages
@@ -690,34 +690,34 @@ TEST_CASE("multiple render pass") {
   // allocator
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
   auto main_buffer = new std::byte[main_buffer_size_in_bytes];
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  InitStrHashSystem(allocator_data);
-  const auto json = GetJson("tests/formatted-config-multipass.json", allocator_data);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  InitStrHashSystem();
+  const auto json = GetJson("tests/formatted-config-multipass.json");
   const uint32_t frame_buffer_num = json["frame_buffer_num"].GetUint();
   // core units
   const auto primarybuffer_size = GetSwapchainBufferSize(json);
-  auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance, allocator_data);
+  auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance);
   auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
   // resource info
-  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<ResourceInfo> resource_info;
   ParseResourceInfo(json["resource"], resource_info);
-  StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<uint32_t> pingpong_current_write_index;
   InitPingpongCurrentWriteIndex(resource_info, pingpong_current_write_index);
-  StrHashMap<const char*> resource_name(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<const char*> resource_name;
   CollectResourceNames(resource_info, resource_name);
   // resources
-  auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device, allocator_data);
-  StrHashMap<uint32_t> resource_index(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  Array<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device);
+  StrHashMap<uint32_t> resource_index;
+  ResizableArray<D3D12MA::Allocation*> allocations;
+  ResizableArray<ID3D12Resource*> resources;
   auto resource_set = CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
   // descriptor handles
   const auto swapchain_buffer_num = frame_buffer_num + 1;
   auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
-  StrHashMap<HandleIndex> handle_index(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<HandleIndex> handle_index;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles;
   DescriptorHandles descriptor_handles{
     .handle_index = handle_index,
     .rtv_handles = rtv_handles,
@@ -737,8 +737,8 @@ TEST_CASE("multiple render pass") {
   };
   uint32_t shader_visible_descriptor_handle_occupied_handle_num = 0;
   // barrier resources
-  StrHashMap<BarrierTransitionInfoIndex> transition_info_index(GetAllocatorCallbacks(allocator_data));
-  Array<BarrierTransitionInfoPerResource> transition_info_internal(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<BarrierTransitionInfoIndex> transition_info_index;
+  ResizableArray<BarrierTransitionInfoPerResource> transition_info_internal;
   BarrierTransitionInfo transition_info{
     .transition_info_index = transition_info_index,
     .transition_info = transition_info_internal,
@@ -748,11 +748,11 @@ TEST_CASE("multiple render pass") {
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   auto fence = CreateFence(device);
   auto fence_event = CreateEvent(nullptr, false, false, nullptr);
-  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num, allocator_data);
+  auto fence_signal_val_list = AllocateArray<uint64_t>(frame_buffer_num);
   std::fill(fence_signal_val_list, fence_signal_val_list + frame_buffer_num, 0);
   uint64_t fence_signal_val = 0;
   // command allocator & list
-  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num, allocator_data);
+  auto command_allocator = AllocateArray<D3d12CommandAllocator*>(frame_buffer_num);
   for (uint32_t i = 0; i < frame_buffer_num; i++) {
     command_allocator[i] = CreateCommandAllocator(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
   }
@@ -766,7 +766,7 @@ TEST_CASE("multiple render pass") {
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
   {
-    auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
+    auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num);
     for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
       swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     }
@@ -777,21 +777,21 @@ TEST_CASE("multiple render pass") {
     for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
       swapchain_resources[i]->Release();
     }
-    Deallocate(swapchain_resources, allocator_data);
+    Deallocate(swapchain_resources);
   }
   // materials
-  StrHashMap<StrHash> material_rootsig_map(GetAllocatorCallbacks(allocator_data));
-  StrHashMap<ID3D12RootSignature*> rootsig_list(GetAllocatorCallbacks(allocator_data));
-  StrHashMap<ID3D12PipelineState*> pso_list(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<StrHash> material_rootsig_map;
+  StrHashMap<ID3D12RootSignature*> rootsig_list;
+  StrHashMap<ID3D12PipelineState*> pso_list;
   MaterialSet material_set {
     .material_rootsig_map = &material_rootsig_map,
     .rootsig_list = &rootsig_list,
     .pso_list = &pso_list,
   };
-  CreateMaterialSet(json["material"], device, allocator_data, material_set);
+  CreateMaterialSet(json["material"], device, material_set);
   // render pass
-  StrHashMap<RenderPass> render_pass_list(GetAllocatorCallbacks(allocator_data));
-  ParseRenderPassList(json["render_pass"], render_pass_list, allocator_data);
+  StrHashMap<RenderPass> render_pass_list;
+  ParseRenderPassList(json["render_pass"], render_pass_list);
   // init imgui
   {
     AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
@@ -866,9 +866,9 @@ TEST_CASE("multiple render pass") {
   command_queue->Release();
   shader_visible_descriptor_heap->Release();
   handle_index.~StrHashMap<HandleIndex>();
-  rtv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  dsv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  cbv_srv_uav_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  rtv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  dsv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  cbv_srv_uav_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
   ReleaseDescriptorHeaps(descriptor_heaps);
   ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
@@ -876,7 +876,7 @@ TEST_CASE("multiple render pass") {
   resource_name.~StrHashMap<const char*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
-  ReleaseGfxCore(core, allocator_data);
-  TermStrHashSystem(allocator_data);
-  delete[] main_buffer;
+  ReleaseGfxCore(core);
+  TermStrHashSystem();
+  //delete[] main_buffer; // TODO comment-in
 }

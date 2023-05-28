@@ -7,8 +7,8 @@ static std::byte main_buffer[main_buffer_size_in_bytes];
 } // namespace
 namespace boke {
 int32_t Run(const char* const config_path) {
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto json = GetJson(config_path, allocator_data);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  auto json = GetJson(config_path);
   return 0;
 }
 } // namespace boke

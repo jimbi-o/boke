@@ -22,15 +22,15 @@ DWORD ReadFileToBuffer(HANDLE file, const DWORD file_size, LPVOID buffer) {
   ReadFile(file, buffer, file_size, &bytes_read, NULL);
   return bytes_read;
 }
-char* LoadFileToBufferImpl(const char* const filepath, boke::AllocatorData* allocator_data, uint32_t* bytes_read) {
+char* LoadFileToBufferImpl(const char* const filepath, uint32_t* bytes_read) {
   using namespace boke;
   auto file = OpenFile(filepath);
   DEBUG_ASSERT(file != 0, DebugAssert{});
   auto file_size = GetFileSize(file);
-  auto buffer = AllocateArray<char>(file_size + 1, allocator_data);
+  auto buffer = AllocateArray<char>(file_size + 1);
   const auto read_size = ReadFileToBuffer(file, file_size, buffer);
   if (read_size != file_size) {
-    Deallocate(buffer, allocator_data);
+    Deallocate(buffer);
     buffer = nullptr;
   }
   buffer[read_size] = '\0';
@@ -42,11 +42,11 @@ char* LoadFileToBufferImpl(const char* const filepath, boke::AllocatorData* allo
 }
 } // namespace
 namespace boke {
-char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator_data) {
-  return LoadFileToBufferImpl(filepath, allocator_data, nullptr);
+char* LoadFileToBuffer(const char* const filepath) {
+  return LoadFileToBufferImpl(filepath, nullptr);
 }
-char* LoadFileToBuffer(const char* const filepath, boke::AllocatorData* allocator_data, uint32_t* bytes_read) {
-  return LoadFileToBufferImpl(filepath, allocator_data, bytes_read);
+char* LoadFileToBuffer(const char* const filepath, uint32_t* bytes_read) {
+  return LoadFileToBufferImpl(filepath, bytes_read);
 }
 } // namespace boke
 #include "doctest/doctest.h"
@@ -58,8 +58,8 @@ TEST_CASE("read file") {
   auto file = OpenFile(filepath);
   auto file_size = GetFileSize(file);
   REQUIRE_LE(file_size, main_buffer_size_in_bytes);
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto buffer = static_cast<LPVOID>(Allocate(file_size, alignof(char), allocator_data));
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  auto buffer = static_cast<LPVOID>(Allocate(file_size, alignof(char)));
   CHECK_EQ(ReadFileToBuffer(file, file_size, buffer), file_size);
   CloseFile(file);
 }
@@ -68,7 +68,7 @@ TEST_CASE("load file to buffer") {
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
   const char filepath[] = "tests/test.json";
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto buffer = LoadFileToBuffer(filepath, allocator_data);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  auto buffer = LoadFileToBuffer(filepath);
   CHECK_NE(buffer, nullptr);
 }

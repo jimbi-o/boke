@@ -7,10 +7,16 @@
 namespace {
 using namespace boke;
 using ShiftType = uint16_t;
+struct AllocatorData {
+  OffsetAllocator::Allocator* offset_allocator;
+  std::uintptr_t head_addr{};
+  uint32_t size{};
+};
 const auto kMaxShiftVal = GetUint32(std::numeric_limits<ShiftType>::max()) + 1;
 const auto kMetadataSize = static_cast<uint32_t>(sizeof(OffsetAllocator::NodeIndex) + sizeof(ShiftType));
 const uint32_t kMinAlignment = 8; // minimum power of two integer larger than kMetadataSize
 const uint32_t kMaxNodeIndex = 128 * 1024;
+AllocatorData* allocator = nullptr;
 auto GetAlignedAddr(std::uintptr_t raw_addr_val, const uint32_t alignment) {
   DEBUG_ASSERT(alignment >= kMinAlignment, DebugAssert{});
   DEBUG_ASSERT(alignment < kMaxShiftVal, DebugAssert{});
@@ -48,13 +54,6 @@ auto GetShift(const void* aligned_ptr) {
 auto GetRawAddr(const std::uintptr_t aligned_addr, const uint32_t shift) {
   return aligned_addr - shift;
 }
-} // namespace
-namespace boke {
-struct AllocatorData {
-  OffsetAllocator::Allocator* offset_allocator;
-  std::uintptr_t head_addr{};
-  uint32_t size{};
-};
 AllocatorData* GetAllocatorData(void* buffer, const uint32_t buffer_size_in_bytes) {
   const auto head_addr = reinterpret_cast<std::uintptr_t>(buffer);
   const auto aligned_head_addr = Align(head_addr, alignof(AllocatorData));
@@ -65,14 +64,19 @@ AllocatorData* GetAllocatorData(void* buffer, const uint32_t buffer_size_in_byte
   allocator_data->size = buffer_size_in_bytes - GetUint32(allocator_data->head_addr - head_addr);
   return allocator_data;
 }
-void* Allocate(const uint32_t size, const uint32_t alignment, AllocatorData* allocator_data) {
+} // namespace
+namespace boke {
+void InitAllocator(void* buffer, const uint32_t buffer_size_in_bytes) {
+  allocator = GetAllocatorData(buffer, buffer_size_in_bytes);
+}
+void* Allocate(const uint32_t size, const uint32_t alignment) {
   const auto valid_alignment = std::max(alignment, kMinAlignment);
   const auto total_size = size + valid_alignment + kMetadataSize - 1;
-  const auto allocation = allocator_data->offset_allocator->allocate(total_size);
+  const auto allocation = allocator->offset_allocator->allocate(total_size);
   DEBUG_ASSERT(allocation.offset != OffsetAllocator::Allocation::NO_SPACE, DebugAssert());
   DEBUG_ASSERT(allocation.metadata != OffsetAllocator::Allocation::NO_SPACE, DebugAssert());
-  const auto raw_addr = allocator_data->head_addr + allocation.offset;
-  DEBUG_ASSERT(raw_addr + total_size <= allocator_data->head_addr + allocator_data->size, DebugAssert{});
+  const auto raw_addr = allocator->head_addr + allocation.offset;
+  DEBUG_ASSERT(raw_addr + total_size <= allocator->head_addr + allocator->size, DebugAssert{});
   const auto aligned_addr = GetAlignedAddr(raw_addr, valid_alignment);
   DEBUG_ASSERT(aligned_addr + size <= raw_addr + total_size, DebugAssert{});
   auto aligned_ptr = reinterpret_cast<void*>(aligned_addr);
@@ -82,16 +86,16 @@ void* Allocate(const uint32_t size, const uint32_t alignment, AllocatorData* all
   DEBUG_ASSERT(GetShift(aligned_ptr) == aligned_addr - raw_addr, DebugAssert{});
   return aligned_ptr;
 }
-void Deallocate(void* ptr, AllocatorData* allocator_data) {
+void Deallocate(void* ptr) {
   if (ptr == nullptr) { return; }
   const auto metadata = GetMetadata(ptr);
   const auto shift = GetShift(ptr);
   const auto aligned_addr = reinterpret_cast<std::uintptr_t>(ptr);
   const auto raw_addr = GetRawAddr(aligned_addr, shift);
-  const auto offset = GetUint32(raw_addr - allocator_data->head_addr);
-  DEBUG_ASSERT(offset < allocator_data->size, DebugAssert());
+  const auto offset = GetUint32(raw_addr - allocator->head_addr);
+  DEBUG_ASSERT(offset < allocator->size, DebugAssert());
   DEBUG_ASSERT(metadata < kMaxNodeIndex, DebugAssert());
-  allocator_data->offset_allocator->free({.offset = offset, .metadata = metadata});
+  allocator->offset_allocator->free({.offset = offset, .metadata = metadata});
 }
 } // namespace boke
 #include "doctest/doctest.h"
@@ -202,7 +206,8 @@ TEST_CASE("AllocationData") {
   using namespace boke;
   const uint32_t buffer_size = 16 * 1024;
   std::byte buffer[buffer_size];
-  auto allocator_data = GetAllocatorData(buffer, buffer_size);
+  InitAllocator(buffer, buffer_size);
+  CHECK_NE(allocator, nullptr);
   uint32_t alignment_list[] = {1,2,4,8,16,256,512,};
   uint32_t alloc_size_list[] = {1,2,3,5,8,128,255,511,512,513,};
   for (uint32_t i = 0; i < 7; i++) {
@@ -212,10 +217,10 @@ TEST_CASE("AllocationData") {
     for (uint32_t j = 0; j < 10; j++) {
       const uint32_t alloc_size = alloc_size_list[j];
       CAPTURE(alloc_size);
-      auto ptr = Allocate(alloc_size, alignment, allocator_data);
+      auto ptr = Allocate(alloc_size, alignment);
       CHECK_NE(ptr, nullptr);
       CHECK_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0);
-      CHECK_LE(reinterpret_cast<std::uintptr_t>(ptr) + alloc_size, allocator_data->head_addr + allocator_data->size);
+      CHECK_LE(reinterpret_cast<std::uintptr_t>(ptr) + alloc_size, allocator->head_addr + allocator->size);
       for (uint32_t k = 0; k < j; k++) {
         CAPTURE(k);
         CAPTURE(reinterpret_cast<std::uintptr_t>(ptr_list[k]));
@@ -230,7 +235,7 @@ TEST_CASE("AllocationData") {
       ptr_list[j] = ptr;
     }
     for (uint32_t j = 0; j < 10; j++) {
-      Deallocate(ptr_list[j], allocator_data);
+      Deallocate(ptr_list[j]);
     }
   }
 }

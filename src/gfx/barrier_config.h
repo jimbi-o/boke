@@ -15,7 +15,7 @@ struct BarrierTransitionInfoPerResource {
 };
 struct BarrierTransitionInfo {
   StrHashMap<BarrierTransitionInfoIndex>& transition_info_index;
-  Array<BarrierTransitionInfoPerResource>& transition_info;
+  ResizableArray<BarrierTransitionInfoPerResource>& transition_info;
 };
 void InitTransitionInfo(const StrHashMap<ResourceInfo>& resource_info, BarrierTransitionInfo& transition_info);
 void AddTransitionInfo(const StrHash resource_id, const uint32_t transition_num, const D3D12_BARRIER_LAYOUT layout, BarrierTransitionInfo& transition_info);

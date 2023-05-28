@@ -36,7 +36,6 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 CPMAddPackage("gh:Tencent/rapidjson#949c771b03de448bdedea80c44a4a5f65284bfeb")
-CPMAddPackage("gh:jimbi-o/tote#442826dc7ca5c9adedb02d2115b70d7c4c65f45f")
 CPMAddPackage("gh:ocornut/imgui#v1.89.5")
 CPMAddPackage(
   NAME d3d12_agility
@@ -104,7 +103,6 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
   cglm
   foonathan_string_id
-  tote
   debug_assert
   $<$<CONFIG:Debug>:dxguid.lib>
 )
@@ -128,7 +126,6 @@ target_include_directories(${PROJECT_NAME}
   "${foonathan_string_id_SOURCE_DIR}"
   "${sebbbi_OffsetAllocator_SOURCE_DIR}"
   "${RapidJSON_SOURCE_DIR}/include"
-  "${tote_SOURCE_DIR}/include"
   "${debug_assert_SOURCE_DIR}"
   "${spdlog_SOURCE_DIR}/include"
   "${doctest_SOURCE_DIR}"

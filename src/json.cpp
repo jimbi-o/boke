@@ -3,13 +3,13 @@
 #include "boke/allocator.h"
 #include "boke/file.h"
 namespace boke {
-rapidjson::Document GetJson(const char* const json_path, boke::AllocatorData* allocator_data) {
+rapidjson::Document GetJson(const char* const json_path) {
   using namespace boke;
   using namespace rapidjson;
-  auto json_text = LoadFileToBuffer(json_path, allocator_data);
+  auto json_text = LoadFileToBuffer(json_path);
   Document d;
   d.Parse(json_text);
-  Deallocate(json_text, allocator_data);
+  Deallocate(json_text);
   return d;
 }
 } // namespace boke
@@ -19,7 +19,7 @@ TEST_CASE("json") {
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
   const char config_path[] = "tests/test.json";
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
-  auto json = GetJson(config_path, allocator_data);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
+  auto json = GetJson(config_path);
   CHECK_EQ(json["testval"], 123);
 }

@@ -218,19 +218,19 @@ TEST_CASE("descriptors") {
   // allocator
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
   auto main_buffer = new std::byte[main_buffer_size_in_bytes];
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
   // core units
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   // parse resource info
-  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
+  StrHashMap<ResourceInfo> resource_info;
+  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
   // resources
-  auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
-  StrHashMap<uint32_t> resource_index(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  Array<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device);
+  StrHashMap<uint32_t> resource_index;
+  ResizableArray<D3D12MA::Allocation*> allocations;
+  ResizableArray<ID3D12Resource*> resources;
   auto resource_set = CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
   // prepare descriptor handles
   auto descriptor_handle_increment_size = GetDescriptorHandleIncrementSize(device);
@@ -248,10 +248,10 @@ TEST_CASE("descriptors") {
   CHECK_NE(descriptor_heap_head_addr.rtv.ptr, 0UL);
   CHECK_NE(descriptor_heap_head_addr.dsv.ptr, 0UL);
   CHECK_NE(descriptor_heap_head_addr.cbv_srv_uav.ptr, 0UL);
-  StrHashMap<HandleIndex> handle_index(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<HandleIndex> handle_index;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles;
+  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles;
   DescriptorHandles descriptor_handles{
     .handle_index = handle_index,
     .rtv_handles = rtv_handles,
@@ -306,9 +306,9 @@ TEST_CASE("descriptors") {
   CHECK_EQ(descriptor_handles.cbv_srv_uav_handles.size(), 6);
   resource_info.~StrHashMap<ResourceInfo>();
   handle_index.~StrHashMap<HandleIndex>();
-  rtv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  dsv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  cbv_srv_uav_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  rtv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  dsv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  cbv_srv_uav_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
   ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   device->Release();

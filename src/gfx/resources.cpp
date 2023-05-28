@@ -12,11 +12,11 @@
 #include "resources.h"
 namespace {
 using namespace boke;
-void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_data) {
-  return boke::Allocate(boke::GetUint32(size), boke::GetUint32(alignment), static_cast<boke::AllocatorData*>(private_data));
+void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void*) {
+  return boke::Allocate(boke::GetUint32(size), boke::GetUint32(alignment));
 }
-void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
-  boke::Deallocate(ptr, static_cast<boke::AllocatorData*>(private_data));
+void GpuMemoryAllocatorDeallocate(void* ptr, void*) {
+  boke::Deallocate(ptr);
 }
 auto CreateTexture2d(D3D12MA::Allocator* allocator,
                      const Size2d& size,
@@ -92,8 +92,8 @@ auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const
 struct ResourceSetCreationAsseet {
   D3D12MA::Allocator* allocator{};
   StrHashMap<uint32_t>& resource_index;
-  Array<D3D12MA::Allocation*>& allocations;
-  Array<ID3D12Resource*>& resources;
+  ResizableArray<D3D12MA::Allocation*>& allocations;
+  ResizableArray<ID3D12Resource*>& resources;
 };
 void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
   D3D12MA::Allocation* allocation[2];
@@ -232,12 +232,12 @@ void SetResource(StrHash id, ID3D12Resource* resource, ResourceSet& resource_set
   resource_set.resource_index[id] = resource_set.resource_index.size();
   resource_set.resources.push_back(resource);
 }
-D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
+D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device) {
   using namespace D3D12MA;
   ALLOCATION_CALLBACKS allocation_callbacks{
     .pAllocate = GpuMemoryAllocatorAllocate,
     .pFree = GpuMemoryAllocatorDeallocate,
-    .pPrivateData = allocator_data,
+    .pPrivateData = nullptr,
   };
   ALLOCATOR_DESC allocator_desc{
     .Flags = ALLOCATOR_FLAG_SINGLETHREADED | ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED,
@@ -254,7 +254,7 @@ D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* 
 void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator) {
   allocator->Release();
 }
-ResourceSet CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<uint32_t>& resource_index, Array<D3D12MA::Allocation*>& allocations, Array<ID3D12Resource*>& resources) {
+ResourceSet CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<uint32_t>& resource_index, ResizableArray<D3D12MA::Allocation*>& allocations, ResizableArray<ID3D12Resource*>& resources) {
   // TODO impl reserve to tote
   /*
   resource_index.reserve(resource_info.size());
@@ -274,14 +274,14 @@ ResourceSet CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12
     .resources = resources,
   };
 };
-void ReleaseResources(StrHashMap<uint32_t>&& resource_index, Array<D3D12MA::Allocation*>&& allocations, Array<ID3D12Resource*>&& resources) {
+void ReleaseResources(StrHashMap<uint32_t>&& resource_index, ResizableArray<D3D12MA::Allocation*>&& allocations, ResizableArray<ID3D12Resource*>&& resources) {
   // allocation->GetResource() does not increment ref count.
   for (auto& allocation : allocations) {
     allocation->Release();
   }
   resource_index.~StrHashMap<uint32_t>();
-  allocations.~Array<D3D12MA::Allocation*>();
-  resources.~Array<ID3D12Resource*>();
+  allocations.~ResizableArray<D3D12MA::Allocation*>();
+  resources.~ResizableArray<ID3D12Resource*>();
 }
 void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index) {
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* pingpong_current_write_index, const StrHash resource_id, const ResourceInfo* resource_info) {
@@ -374,7 +374,7 @@ TEST_CASE("resources") {
   // allocator
   const uint32_t main_buffer_size_in_bytes = 1024 * 1024;
   auto main_buffer = new std::byte[main_buffer_size_in_bytes];
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
   // core units
   auto gfx_libraries = LoadGfxLibraries();
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
@@ -382,8 +382,8 @@ TEST_CASE("resources") {
   // parse resource info
   const uint32_t primary_width = 1920;
   const uint32_t primary_height = 1080;
-  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
+  StrHashMap<ResourceInfo> resource_info;
+  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
   CHECK_EQ(resource_info.size(), 7);
   CHECK_EQ(resource_info["gbuffer0"_id].creation_type, ResourceCreationType::kRtv);
   CHECK_EQ(resource_info["gbuffer0"_id].flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
@@ -428,10 +428,10 @@ TEST_CASE("resources") {
   CHECK_EQ(resource_info["swapchain"_id].size.height, primary_height);
   CHECK_EQ(resource_info["swapchain"_id].pingpong, false);
   // gpu resources
-  auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
-  StrHashMap<uint32_t> resource_index(GetAllocatorCallbacks(allocator_data));
-  Array<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  Array<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device);
+  StrHashMap<uint32_t> resource_index;
+  ResizableArray<D3D12MA::Allocation*> allocations;
+  ResizableArray<ID3D12Resource*> resources;
   CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
   CHECK_EQ(resource_index.size(), 6);
   CHECK_UNARY(resource_index.contains("gbuffer0"_id));

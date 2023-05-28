@@ -233,7 +233,7 @@ TEST_CASE("barrier config") {
   using namespace boke;
   const uint32_t main_buffer_size_in_bytes = 16 * 1024;
   std::byte main_buffer[main_buffer_size_in_bytes];
-  auto allocator_data = GetAllocatorData(main_buffer, main_buffer_size_in_bytes);
+  InitAllocator(main_buffer, main_buffer_size_in_bytes);
   StrHash gbuffers[] = {"gbuffer0"_id, "gbuffer1"_id, "gbuffer2"_id, "gbuffer3"_id,};
   StrHash primary[] = {"primary"_id,};
   StrHash swapchain[] = {"swapchain"_id,};
@@ -285,16 +285,16 @@ TEST_CASE("barrier config") {
       .present = "swapchain"_id,
     },
   };
-  StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<uint32_t> pingpong_current_write_index;
   pingpong_current_write_index["primary"_id] = 0;
-  StrHashMap<BarrierTransitionInfoIndex> transition_info_index(GetAllocatorCallbacks(allocator_data));
-  Array<BarrierTransitionInfoPerResource> transition_info_internal(GetAllocatorCallbacks(allocator_data));
+  StrHashMap<BarrierTransitionInfoIndex> transition_info_index;
+  ResizableArray<BarrierTransitionInfoPerResource> transition_info_internal;
   BarrierTransitionInfo transition_info{
     .transition_info_index = transition_info_index,
     .transition_info = transition_info_internal,
   };
-  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
-  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
+  StrHashMap<ResourceInfo> resource_info;
+  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
   InitTransitionInfo(resource_info, transition_info);
   CHECK_EQ(transition_info.transition_info_index.size(), 6);
   CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer0"_id));
