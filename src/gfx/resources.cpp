@@ -18,21 +18,6 @@ void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void* private_da
 void GpuMemoryAllocatorDeallocate(void* ptr, void* private_data) {
   boke::Deallocate(ptr, static_cast<boke::AllocatorData*>(private_data));
 }
-auto HashInteger(const uint64_t x) {
-  // Jenkins hash
-  const uint8_t* data = reinterpret_cast<const uint8_t*>(&x);
-  const size_t length = sizeof(x);
-  uint64_t hash = 0;
-  for (size_t i = 0; i < length; ++i) {
-    hash += data[i];
-    hash += (hash << 10);
-    hash ^= (hash >> 6);
-  }
-  hash += (hash << 3);
-  hash ^= (hash >> 11);
-  hash += (hash << 15);
-  return hash;
-}
 auto CreateTexture2d(D3D12MA::Allocator* allocator,
                      const Size2d& size,
                      const DXGI_FORMAT format,
@@ -104,47 +89,37 @@ auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const
                          &clear_value,
                          0, nullptr);
 }
-struct ResourceCreationImplAsset {
+struct ResourceSetCreationAsseet {
   D3D12MA::Allocator* allocator{};
-  StrHashMap<D3D12MA::Allocation*>* allocations{};
-  StrHashMap<ID3D12Resource*>* resources{};
+  StrHashMap<uint32_t>& resource_index;
+  Array<D3D12MA::Allocation*>& allocations;
+  Array<ID3D12Resource*>& resources;
 };
-void CreateResourceImpl(ResourceCreationImplAsset* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+  D3D12MA::Allocation* allocation[2];
+  uint32_t allocation_num = 1;
   switch (resource_info->creation_type) {
     case ResourceCreationType::kRtv: {
+      allocation[0] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       if (resource_info->pingpong) {
-        auto allocation0 = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-        auto allocation1 = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-        const auto id0 = GetPinpongResourceId(resource_id, 0);
-        const auto id1 = GetPinpongResourceId(resource_id, 1);
-        SetD3d12Name(allocation0->GetResource(), resource_id, 0);
-        SetD3d12Name(allocation0->GetResource(), resource_id, 1);
-        asset->allocations->insert(id0, allocation0);
-        asset->allocations->insert(id1, allocation1);
-        asset->resources->insert(id0, allocation0->GetResource());
-        asset->resources->insert(id1, allocation1->GetResource());
-        spdlog::info("{}_{}:{:x}", GetStr(resource_id), 0, id0);
-        spdlog::info("{}_{}:{:x}", GetStr(resource_id), 1, id1);
-        break;
+        allocation_num++;
+        allocation[1] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       }
-      auto allocation = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-      asset->allocations->insert(resource_id, allocation);
-      asset->resources->insert(resource_id, allocation->GetResource());
-      SetD3d12Name(allocation->GetResource(), resource_id);
-      spdlog::info("{}:{:x}", GetStr(resource_id), resource_id);
       break;
     }
     case ResourceCreationType::kDsv: {
-      auto allocation = CreateTexture2dDsv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-      asset->allocations->insert(resource_id, allocation);
-      asset->resources->insert(resource_id, allocation->GetResource());
-      SetD3d12Name(allocation->GetResource(), resource_id);
-      spdlog::info("{}:{:x}", GetStr(resource_id), resource_id);
+      allocation[0] = CreateTexture2dDsv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       break;
     }
     case ResourceCreationType::kNone: {
-      break;
+      return;
     }
+  }
+  asset->resource_index[resource_id] = asset->allocations.size();
+  for (uint32_t i = 0; i < allocation_num; i++) {
+    asset->allocations.push_back(allocation[i]);
+    asset->resources.push_back(allocation[i]->GetResource());
+    SetD3d12Name(allocation[i]->GetResource(), resource_id, i);
   }
 }
 auto GetCreationType(const char* const flag) {
@@ -228,9 +203,6 @@ Size2d GetSize2d(const rapidjson::Value& array) {
     .height = array[1].GetUint(),
   };
 }
-StrHash GetPinpongResourceId(const StrHash id, const uint32_t index) {
-  return HashInteger(id + index);
-}
 void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info) {
   for (const auto& resource : resources.GetArray()) {
     const auto name = resource["name"].GetString();
@@ -245,22 +217,20 @@ void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInf
   }
 }
 void CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<const char*>& resource_name) {
-  resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo* info) {
-    if (info->pingpong) {
-      resource_name->insert(GetPinpongResourceId(resource_id, 0), GetStr(resource_id));
-      resource_name->insert(GetPinpongResourceId(resource_id, 1), GetStr(resource_id));
-    } else {
-      resource_name->insert(resource_id, GetStr(resource_id));
-    }
-  }, &resource_name);
+  resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo*) {
+    resource_name->insert(resource_id, GetStr(resource_id));},
+    &resource_name);
 }
-StrHash GetResourceIdPingpongRead(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
-  if (!pingpong_current_write_index.contains(id)) { return id; }
-  return GetPinpongResourceId(id, pingpong_current_write_index[id] == 0 ? 1 : 0);
+ID3D12Resource* GetResource(const ResourceSet& resource_set, const StrHash id, const uint32_t index) {
+  return resource_set.resources[resource_set.resource_index[id] + index];
 }
-StrHash GetResourceIdPingpongWrite(const StrHash id, const StrHashMap<uint32_t>& pingpong_current_write_index) {
-  if (!pingpong_current_write_index.contains(id)) { return id; }
-  return GetPinpongResourceId(id, pingpong_current_write_index[id]);
+void SetResource(StrHash id, ID3D12Resource* resource, ResourceSet& resource_set) {
+  if (resource_set.resource_index.contains(id)) {
+    resource_set.resources[resource_set.resource_index[id]] = resource;
+    return;
+  }
+  resource_set.resource_index[id] = resource_set.resource_index.size();
+  resource_set.resources.push_back(resource);
 }
 D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device, AllocatorData* allocator_data) {
   using namespace D3D12MA;
@@ -284,21 +254,34 @@ D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* 
 void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator) {
   allocator->Release();
 }
-void CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<D3D12MA::Allocation*>& allocations, StrHashMap<ID3D12Resource*>& resources) {
-  ResourceCreationImplAsset asset{
+ResourceSet CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator, StrHashMap<uint32_t>& resource_index, Array<D3D12MA::Allocation*>& allocations, Array<ID3D12Resource*>& resources) {
+  // TODO impl reserve to tote
+  /*
+  resource_index.reserve(resource_info.size());
+  const uint32_t physical_resource_num = GetResourceNum(resource_info);
+  allocations.reserve(physical_resource_num);
+  resources.reserve(physical_resource_num);
+  */
+  ResourceSetCreationAsseet asset{
     .allocator = allocator,
-    .allocations = &allocations,
-    .resources = &resources,
+    .resource_index = resource_index,
+    .allocations = allocations,
+    .resources = resources,
   };
-  resource_info.iterate<ResourceCreationImplAsset>(CreateResourceImpl, &asset);
-}
-void ReleaseAllocations(StrHashMap<D3D12MA::Allocation*>&& allocations, StrHashMap<ID3D12Resource*>&& resources) {
-  allocations.iterate([](const StrHash, D3D12MA::Allocation** allocation) {
-    (*allocation)->Release();
-  });
-  // resources acquired from allocation->GetResource() does not need Release
-  allocations.~StrHashMap<D3D12MA::Allocation*>();
-  resources.~StrHashMap<ID3D12Resource*>();
+  resource_info.iterate<ResourceSetCreationAsseet>(CreateResourceImpl, &asset);
+  return {
+    .resource_index = resource_index,
+    .resources = resources,
+  };
+};
+void ReleaseResources(StrHashMap<uint32_t>&& resource_index, Array<D3D12MA::Allocation*>&& allocations, Array<ID3D12Resource*>&& resources) {
+  // allocation->GetResource() does not increment ref count.
+  for (auto& allocation : allocations) {
+    allocation->Release();
+  }
+  resource_index.~StrHashMap<uint32_t>();
+  allocations.~Array<D3D12MA::Allocation*>();
+  resources.~Array<ID3D12Resource*>();
 }
 void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index) {
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* pingpong_current_write_index, const StrHash resource_id, const ResourceInfo* resource_info) {
@@ -306,6 +289,31 @@ void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info
       pingpong_current_write_index->insert(resource_id, 0);
     }
   }, &pingpong_current_write_index);
+}
+void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t resource_num, ResourceSet& resource_set) {
+  resource_set.resource_index[id] = resource_set.resources.size();
+  for (uint32_t i = 0; i < resource_num; i++) {
+    resource_set.resources.push_back(resource[i]);
+    SetD3d12Name(resource[i], id, i);
+  }
+}
+uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
+  if (!pingpong_current_write_index.contains(id)) {
+    return 0;
+  }
+  return pingpong_current_write_index[id] == 0 ? 1 : 0;
+}
+uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
+  if (!pingpong_current_write_index.contains(id)) {
+    return 0;
+  }
+  return pingpong_current_write_index[id];
+}
+uint32_t GetPhysicalResourceNum(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
+  if (!pingpong_current_write_index.contains(id)) {
+    return 1;
+  }
+  return 2;
 }
 } // namespace boke
 #include "doctest/doctest.h"
@@ -421,29 +429,98 @@ TEST_CASE("resources") {
   CHECK_EQ(resource_info["swapchain"_id].pingpong, false);
   // gpu resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device, allocator_data);
-  StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
-  CreateResources(resource_info, gpu_memory_allocator, allocations, resources);
+  StrHashMap<uint32_t> resource_index(GetAllocatorCallbacks(allocator_data));
+  Array<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
+  Array<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
+  CHECK_EQ(resource_index.size(), 6);
+  CHECK_UNARY(resource_index.contains("gbuffer0"_id));
+  CHECK_UNARY(resource_index.contains("gbuffer1"_id));
+  CHECK_UNARY(resource_index.contains("gbuffer2"_id));
+  CHECK_UNARY(resource_index.contains("gbuffer3"_id));
+  CHECK_UNARY(resource_index.contains("depth"_id));
+  CHECK_UNARY(resource_index.contains("primary"_id));
   CHECK_EQ(allocations.size(), 7);
-  CHECK_NE(allocations["gbuffer0"_id], nullptr);
-  CHECK_NE(allocations["gbuffer1"_id], nullptr);
-  CHECK_NE(allocations["gbuffer2"_id], nullptr);
-  CHECK_NE(allocations["gbuffer3"_id], nullptr);
-  CHECK_NE(allocations["depth"_id], nullptr);
-  CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 0)], nullptr);
-  CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 1)], nullptr);
-  CHECK_NE(allocations[GetPinpongResourceId("primary"_id, 0)], allocations[GetPinpongResourceId("primary"_id, 1)]);
   CHECK_EQ(resources.size(), 7);
-  CHECK_NE(resources["gbuffer0"_id], nullptr);
-  CHECK_NE(resources["gbuffer1"_id], nullptr);
-  CHECK_NE(resources["gbuffer2"_id], nullptr);
-  CHECK_NE(resources["gbuffer3"_id], nullptr);
-  CHECK_NE(resources["depth"_id], nullptr);
-  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], nullptr);
-  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 1)], nullptr);
-  CHECK_NE(resources[GetPinpongResourceId("primary"_id, 0)], resources[GetPinpongResourceId("primary"_id, 1)]);
+  for (uint32_t i = 0; i < 7; i++) {
+    CAPTURE(i);
+    CHECK_EQ(allocations[i]->GetResource(), resources[i]);
+  }
+  auto desc = resources[resource_index["gbuffer0"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R8G8B8A8_UNORM);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+  desc = resources[resource_index["gbuffer1"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R8G8B8A8_UNORM);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+  desc = resources[resource_index["gbuffer2"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R10G10B10A2_UNORM);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+  desc = resources[resource_index["gbuffer3"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R8G8B8A8_UNORM);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+  desc = resources[resource_index["depth"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R24G8_TYPELESS);
+  CHECK_EQ(desc.SampleDesc.Count, 1);
+  CHECK_EQ(desc.SampleDesc.Quality, 0);
+  CHECK_EQ(desc.Layout, D3D12_TEXTURE_LAYOUT_UNKNOWN);
+  CHECK_EQ(desc.Flags, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE);
+  desc = resources[resource_index["primary"_id]]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R16G16B16A16_FLOAT);
+  desc = resources[resource_index["primary"_id] + 1]->GetDesc();
+  CHECK_EQ(desc.Dimension, D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+  CHECK_EQ(desc.Width, primary_width);
+  CHECK_EQ(desc.Height, primary_height);
+  CHECK_EQ(desc.DepthOrArraySize, 1);
+  CHECK_EQ(desc.MipLevels, 1);
+  CHECK_EQ(desc.Format, DXGI_FORMAT_R16G16B16A16_FLOAT);
   // terminate
-  ReleaseAllocations(std::move(allocations), std::move(resources));
+  ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
   gpu_memory_allocator->Release();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();

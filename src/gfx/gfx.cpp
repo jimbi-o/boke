@@ -287,7 +287,7 @@ auto ReleaseGfxCore(GfxCoreUnit& core, boke::AllocatorData* allocator_data) {
 }
 struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
-  StrHashMap<ID3D12Resource*>& resources;
+  ResourceSet& resource_set;
   DescriptorHandles& descriptor_handles;
   MaterialSet& material_set;
   Size2d primarybuffer_size{};
@@ -310,10 +310,14 @@ void SetRtvAndDsv(const RenderPassFuncCommonParams& common_params, const RenderP
   const uint32_t max_rtv_num = 8;
   D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num]{};
   for (uint32_t i = 0; i < pass_params.render_pass_info.rtv_num; i++) {
-    rtv_handles[i] = (*common_params.descriptor_handles.rtv)[GetResourceIdPingpongWrite(pass_params.render_pass_info.rtv[i], common_params.pingpong_current_write_index)];
+    rtv_handles[i] = GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[i], GetPingpongIndexWrite(common_params.pingpong_current_write_index, pass_params.render_pass_info.rtv[i]), common_params.descriptor_handles);
   }
-  const auto dsv_handle = (pass_params.render_pass_info.dsv != kEmptyStr) ? &(*common_params.descriptor_handles.dsv)[pass_params.render_pass_info.dsv] : nullptr;
-  command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, dsv_handle);
+  if (pass_params.render_pass_info.dsv == kEmptyStr) {
+    command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, nullptr);
+    return;
+  }
+  const auto dsv_handle = GetDescriptorHandleDsv(pass_params.render_pass_info.dsv, GetPingpongIndexWrite(common_params.pingpong_current_write_index, pass_params.render_pass_info.dsv), common_params.descriptor_handles);
+  command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, &dsv_handle);
 }
 void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   SetViewportAndScissor(common_params.primarybuffer_size, command_list);
@@ -342,8 +346,10 @@ void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, cons
   command_list->DispatchMesh(1, 1, 1);
 }
 void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {}
-void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams&, D3d12CommandList* command_list) {
-  RenderImgui(command_list, (*common_params.descriptor_handles.rtv)["swapchain"_id]);
+void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
+  RenderImgui(command_list, GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[0],
+                                                   GetPingpongIndexWrite(common_params.pingpong_current_write_index, pass_params.render_pass_info.rtv[0]),
+                                                   common_params.descriptor_handles));
 }
 using RenderPassFunc = void (*)(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*);
 auto GatherRenderPassFunc(const uint32_t render_pass_info_len, const RenderPassInfo* render_pass_info, RenderPassFunc* render_pass_func) {
@@ -701,18 +707,24 @@ TEST_CASE("multiple render pass") {
   CollectResourceNames(resource_info, resource_name);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device, allocator_data);
-  StrHashMap<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
-  StrHashMap<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
-  CreateResources(resource_info, gpu_memory_allocator, allocations, resources);
+  StrHashMap<uint32_t> resource_index(GetAllocatorCallbacks(allocator_data));
+  Array<D3D12MA::Allocation*> allocations(GetAllocatorCallbacks(allocator_data));
+  Array<ID3D12Resource*> resources(GetAllocatorCallbacks(allocator_data));
+  auto resource_set = CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
   // descriptor handles
   const auto swapchain_buffer_num = frame_buffer_num + 1;
   auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
+  StrHashMap<HandleIndex> handle_index(GetAllocatorCallbacks(allocator_data));
+  Array<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles(GetAllocatorCallbacks(allocator_data));
+  Array<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles(GetAllocatorCallbacks(allocator_data));
+  Array<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles(GetAllocatorCallbacks(allocator_data));
   DescriptorHandles descriptor_handles{
-    .rtv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
-    .dsv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
-    .srv = New<StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+    .handle_index = handle_index,
+    .rtv_handles = rtv_handles,
+    .dsv_handles = dsv_handles,
+    .cbv_srv_uav_handles = cbv_srv_uav_handles,
   };
-  PrepareDescriptorHandles(resource_info, resources, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+  PrepareDescriptorHandles(resource_info, resource_set, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
   // descriptor handles (gpu)
   const uint32_t shader_visible_descriptor_handle_num = json["descriptor_handles"]["shader_visible_buffer_num"].GetUint();
   auto shader_visible_descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shader_visible_descriptor_handle_num, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
@@ -725,11 +737,13 @@ TEST_CASE("multiple render pass") {
   };
   uint32_t shader_visible_descriptor_handle_occupied_handle_num = 0;
   // barrier resources
-  BarrierSet barrier_set = {
-    .transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
-    .next_transition_info = New<StrHashMap<BarrierTransitionInfoPerResource>>(allocator_data, GetAllocatorCallbacks(allocator_data)),
+  StrHashMap<BarrierTransitionInfoIndex> transition_info_index(GetAllocatorCallbacks(allocator_data));
+  Array<BarrierTransitionInfoPerResource> transition_info_internal(GetAllocatorCallbacks(allocator_data));
+  BarrierTransitionInfo transition_info{
+    .transition_info_index = transition_info_index,
+    .transition_info = transition_info_internal,
   };
-  InitTransitionInfo(resource_info, *barrier_set.transition_info);
+  InitTransitionInfo(resource_info, transition_info);
   // command queue & fence
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   auto fence = CreateFence(device);
@@ -751,13 +765,19 @@ TEST_CASE("multiple render pass") {
     CHECK_UNARY(SUCCEEDED(hr));
   }
   auto swapchain_latency_object = swapchain->GetFrameLatencyWaitableObject();
-  auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
   {
+    auto swapchain_resources = AllocateArray<ID3D12Resource*>(swapchain_buffer_num, allocator_data);
     for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
       swapchain_resources[i] = GetSwapchainBuffer(swapchain, i);
     }
     SetD3d12NameToList(reinterpret_cast<ID3D12Object**>(swapchain_resources), swapchain_buffer_num, L"swapchain");
-    AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr.rtv, descriptor_heaps.increment_size.rtv, descriptor_handles);
+    AddResource("swapchain"_id, swapchain_resources, swapchain_buffer_num, resource_set);
+    AddDescriptorHandlesRtv("swapchain"_id, swapchain_format, swapchain_resources, swapchain_buffer_num, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+    AddTransitionInfo("swapchain"_id, swapchain_buffer_num, D3D12_BARRIER_LAYOUT_PRESENT, transition_info);
+    for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
+      swapchain_resources[i]->Release();
+    }
+    Deallocate(swapchain_resources, allocator_data);
   }
   // materials
   StrHashMap<StrHash> material_rootsig_map(GetAllocatorCallbacks(allocator_data));
@@ -774,8 +794,8 @@ TEST_CASE("multiple render pass") {
   ParseRenderPassList(json["render_pass"], render_pass_list, allocator_data);
   // init imgui
   {
-    AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr.cbv_srv_uav, descriptor_heaps.increment_size.cbv_srv_uav, descriptor_handles);
-    const auto imgui_font_cpu_handle = (*descriptor_handles.srv)["imgui_font"_id];
+    AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+    const auto imgui_font_cpu_handle = GetDescriptorHandleSrv("imgui_font"_id, 0, descriptor_handles);
     const auto imgui_font_gpu_handle = shader_visible_descriptor_handle_info.head_addr_gpu;
     InitImgui(core.window_info.hwnd, device, swapchain_buffer_num, swapchain_format,
               shader_visible_descriptor_heap, imgui_font_cpu_handle, imgui_font_gpu_handle);
@@ -788,7 +808,7 @@ TEST_CASE("multiple render pass") {
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   RenderPassFuncCommonParams render_pass_common_params {
     .pingpong_current_write_index = pingpong_current_write_index,
-    .resources = resources,
+    .resource_set = resource_set,
     .descriptor_handles = descriptor_handles,
     .material_set = material_set,
     .primarybuffer_size = primarybuffer_size,
@@ -802,8 +822,7 @@ TEST_CASE("multiple render pass") {
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     // bind current swapchain backbuffer
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
-    resources["swapchain"_id] = swapchain_resources[swapchain_backbuffer_index];
-    (*descriptor_handles.rtv)["swapchain"_id] = (*descriptor_handles.rtv)[GetPinpongResourceId("swapchain"_id, swapchain_backbuffer_index)];
+    pingpong_current_write_index["swapchain"_id] = swapchain_backbuffer_index;
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
     const auto is_in_debug_buffer_view_mode = (ui_params.debug_view_resource_id != kEmptyStr);
@@ -813,10 +832,10 @@ TEST_CASE("multiple render pass") {
     const auto current_render_pass_name = is_in_debug_buffer_view_mode ? "debug_buffer_view"_id : "default"_id;
     const auto& current_render_pass = render_pass_list[current_render_pass_name];
     for (uint32_t i = 0; i < current_render_pass.render_pass_len; i++) {
-      UpdateTransitionInfo(barrier_set);
-      FlipPingPongIndex(current_render_pass.render_pass_info[i], barrier_set, pingpong_current_write_index);
-      ConfigureRenderPassBarriersTextureTransitions(current_render_pass.render_pass_info[i], pingpong_current_write_index, barrier_set);
-      ProcessBarriers(barrier_set, resources, pingpong_current_write_index, command_list);
+      UpdateTransitionInfo(transition_info);
+      FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, pingpong_current_write_index);
+      ConfigureRenderPassBarriersTextureTransitions(current_render_pass.render_pass_info[i], pingpong_current_write_index, transition_info);
+      ProcessBarriers(transition_info, resource_set, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(current_render_pass.render_pass_info[i],
                                                                               descriptor_handles,
                                                                               pingpong_current_write_index,
@@ -827,7 +846,7 @@ TEST_CASE("multiple render pass") {
     }
     EndCommandListRecording(command_list);
     command_queue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&command_list));
-    ResetBarrierSyncAccessStatus(barrier_set);
+    ResetBarrierSyncAccessStatus(transition_info);
     swapchain->Present(1, 0);
     fence_signal_val++;
     command_queue->Signal(fence, fence_signal_val);
@@ -837,10 +856,6 @@ TEST_CASE("multiple render pass") {
   render_pass_list.~StrHashMap<RenderPass>();
   WaitForFence(fence_event, fence, fence_signal_val);
   ReleaseMaterialSet(material_set);
-  for (uint32_t i = 0; i < swapchain_buffer_num; i++) {
-    swapchain_resources[i]->Release();
-  }
-  Deallocate(swapchain_resources, allocator_data);
   TermImgui();
   swapchain->Release();
   command_list->Release();
@@ -849,14 +864,13 @@ TEST_CASE("multiple render pass") {
   }
   fence->Release();
   command_queue->Release();
-  barrier_set.transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
-  barrier_set.next_transition_info->~StrHashMap<BarrierTransitionInfoPerResource>();
   shader_visible_descriptor_heap->Release();
-  descriptor_handles.rtv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  descriptor_handles.dsv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  descriptor_handles.srv->~StrHashMap<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  handle_index.~StrHashMap<HandleIndex>();
+  rtv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  dsv_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  cbv_srv_uav_handles.~Array<D3D12_CPU_DESCRIPTOR_HANDLE>();
   ReleaseDescriptorHeaps(descriptor_heaps);
-  ReleaseAllocations(std::move(allocations), std::move(resources));
+  ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   pingpong_current_write_index.~StrHashMap<uint32_t>();
   resource_name.~StrHashMap<const char*>();

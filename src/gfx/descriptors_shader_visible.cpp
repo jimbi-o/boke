@@ -23,14 +23,11 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
   D3D12_CPU_DESCRIPTOR_HANDLE src_descriptor_handles[src_descriptor_num_len]{};
   uint32_t src_descriptor_num_index = 0;
   {
-    const auto resource_id = GetResourceIdPingpongRead(render_pass_info.srv[0], pingpong_current_write_index);
-    const auto& handle = (*descriptor_handles.srv)[resource_id];
-    src_descriptor_handles[src_descriptor_num_index].ptr = handle.ptr;
+    src_descriptor_handles[src_descriptor_num_index].ptr = GetDescriptorHandleSrv(render_pass_info.srv[0], GetPingpongIndexRead(pingpong_current_write_index, render_pass_info.srv[0]), descriptor_handles).ptr;
     src_descriptor_num[src_descriptor_num_index] = 1;
   }
   for (uint32_t i = 1; i < render_pass_info.srv_num; i++) {
-    const auto resource_id = GetResourceIdPingpongRead(render_pass_info.srv[i], pingpong_current_write_index);
-    const auto& handle = (*descriptor_handles.srv)[resource_id];
+    const auto handle = GetDescriptorHandleSrv(render_pass_info.srv[i], GetPingpongIndexRead(pingpong_current_write_index, render_pass_info.srv[i]), descriptor_handles);
     if (src_descriptor_handles[src_descriptor_num_index].ptr + src_descriptor_num[src_descriptor_num_index] * increment_size == handle.ptr) {
       src_descriptor_num[src_descriptor_num_index]++;
       continue;

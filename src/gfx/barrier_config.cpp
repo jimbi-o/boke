@@ -4,6 +4,7 @@
 #include "boke/str_hash.h"
 #include "boke/util.h"
 #include "barrier_config.h"
+#include "json.h"
 #include "render_pass_info.h"
 #include "resources.h"
 namespace {
@@ -21,10 +22,28 @@ auto IsSame(const BarrierTransitionInfoPerResource& a, const BarrierTransitionIn
   if (a.layout != b.layout) { return false; }
   return true;
 }
-auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
-                                         const StrHashMap<uint32_t>& pingpong_current_write_index,
-                                         const StrHashMap<BarrierTransitionInfoPerResource>& transition_info,
-                                         StrHashMap<BarrierTransitionInfoPerResource>& next_transition_info) {
+auto GetTransitionInfoIndex(const StrHash resource_id, const BarrierTransitionInfo& transition_info) {
+  return transition_info.transition_info_index[resource_id];
+}
+auto GetCurrentTransitionInfo(const StrHash resource_id, const uint32_t resource_local_index, const BarrierTransitionInfo& transition_info) {
+  const auto& transition_info_index = GetTransitionInfoIndex(resource_id, transition_info);
+  return transition_info.transition_info[transition_info_index.index + resource_local_index];
+}
+auto GetNextTransitionInfo(const StrHash resource_id, const uint32_t resource_local_index, const BarrierTransitionInfo& transition_info) {
+  const auto& transition_info_index = GetTransitionInfoIndex(resource_id, transition_info);
+  return transition_info.transition_info[transition_info_index.index + transition_info_index.physical_resource_num + resource_local_index];
+}
+auto GetCurrentTransitionInfo(const uint32_t resource_local_index, const BarrierTransitionInfoIndex& transition_info_index, const BarrierTransitionInfo& transition_info) {
+  return transition_info.transition_info[transition_info_index.index + resource_local_index];
+}
+auto GetNextTransitionInfo(const uint32_t resource_local_index, const BarrierTransitionInfoIndex& transition_info_index, const BarrierTransitionInfo& transition_info) {
+  return transition_info.transition_info[transition_info_index.index + transition_info_index.physical_resource_num + resource_local_index];
+}
+auto UpdateNextTransitionInfo(const StrHash resource_id, const uint32_t resource_local_index, const BarrierTransitionInfoPerResource& info, BarrierTransitionInfo& transition_info) {
+  const auto& transition_info_index = GetTransitionInfoIndex(resource_id, transition_info);
+  transition_info.transition_info[transition_info_index.index + transition_info_index.physical_resource_num + resource_local_index] = info;
+}
+auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierTransitionInfo& transition_info) {
   // srv
   BarrierTransitionInfoPerResource info{
     .sync = D3D12_BARRIER_SYNC_PIXEL_SHADING,
@@ -32,10 +51,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
     .layout = D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE
   };
   for (uint32_t i = 0; i < next_render_pass.srv_num; i++) {
-    const auto resource_id = GetResourceIdPingpongRead(next_render_pass.srv[i], pingpong_current_write_index);
-    if (!IsSame(transition_info[resource_id], info)) {
-      next_transition_info[resource_id] = info;
-    }
+    UpdateNextTransitionInfo(next_render_pass.srv[i], GetPingpongIndexRead(pingpong_current_write_index, next_render_pass.srv[i]), info, transition_info);
   }
   // rtv
   info = BarrierTransitionInfoPerResource{
@@ -44,10 +60,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
     .layout = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
   };
   for (uint32_t i = 0; i < next_render_pass.rtv_num; i++) {
-    const auto resource_id = GetResourceIdPingpongWrite(next_render_pass.rtv[i], pingpong_current_write_index);
-    if (!IsSame(transition_info[resource_id], info)) {
-      next_transition_info[resource_id] = info;
-    }
+    UpdateNextTransitionInfo(next_render_pass.rtv[i], GetPingpongIndexWrite(pingpong_current_write_index, next_render_pass.rtv[i]), info, transition_info);
   }
   // dsv
   if (next_render_pass.dsv != kEmptyStr) {
@@ -56,9 +69,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
       .access = D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE,
       .layout = D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
     };
-    if (!IsSame(transition_info[next_render_pass.dsv], info)) {
-      next_transition_info[next_render_pass.dsv] = info;
-    }
+    UpdateNextTransitionInfo(next_render_pass.dsv, GetPingpongIndexWrite(pingpong_current_write_index, next_render_pass.dsv), info, transition_info);
   }
   // present
   if (next_render_pass.present != kEmptyStr) {
@@ -67,63 +78,10 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
       .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
       .layout = D3D12_BARRIER_LAYOUT_PRESENT,
     };
-    if (!IsSame(transition_info[next_render_pass.present], info)) {
-      next_transition_info[next_render_pass.present] = info;
-    }
+    UpdateNextTransitionInfo(next_render_pass.present, GetPingpongIndexWrite(pingpong_current_write_index, next_render_pass.present), info, transition_info);
   }
 }
-auto UpdateTransitionInfoEntity(StrHashMap<BarrierTransitionInfoPerResource>* transition_info, const StrHash key, const BarrierTransitionInfoPerResource* value) {
-  DEBUG_ASSERT(transition_info->contains(key), DebugAssert{});
-  (*transition_info)[key] = *value;
-}
-auto ConfigureInitialLayout(const uint32_t render_pass_num, RenderPassInfo* render_pass, const StrHashMap<uint32_t>& pingpong_current_write_index, StrHashMap<D3D12_BARRIER_LAYOUT>& resource_layout) {
-  for (uint32_t i = 0; i < render_pass_num; i++) {
-    for (uint32_t j = 0; j < render_pass[i].rtv_num; j++) {
-      const auto& rtv = render_pass[i].rtv[j];
-      DEBUG_ASSERT(!resource_layout.contains(rtv) || resource_layout[rtv] == D3D12_BARRIER_LAYOUT_RENDER_TARGET, DebugAssert{});
-      if (!resource_layout.contains(rtv)) {
-        if (pingpong_current_write_index.contains(rtv)) {
-          resource_layout[GetPinpongResourceId(rtv, 0)] = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
-          resource_layout[GetPinpongResourceId(rtv, 1)] = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
-        } else {
-          resource_layout[rtv] = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
-        }
-      }
-    }
-    if (render_pass[i].dsv != kEmptyStr) {
-      DEBUG_ASSERT(!resource_layout.contains(render_pass[i].dsv) || resource_layout[render_pass[i].dsv] == D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE, DebugAssert{});
-      DEBUG_ASSERT(!pingpong_current_write_index.contains(render_pass[i].dsv), DebugAssert{});
-      if (!resource_layout.contains(render_pass[i].dsv)) {
-        resource_layout[render_pass[i].dsv] = D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE;
-      }
-    }
-    if (render_pass[i].present != kEmptyStr) {
-      DEBUG_ASSERT(!pingpong_current_write_index.contains(render_pass[i].present), DebugAssert{});
-      resource_layout[render_pass[i].present] = D3D12_BARRIER_LAYOUT_PRESENT;
-    }
-  }
-}
-auto SetLayout(StrHashMap<BarrierTransitionInfoPerResource>* transition_info, const StrHash resource_id, const D3D12_BARRIER_LAYOUT* layout) {
-  (*transition_info)[resource_id].layout = *layout;
-}
-auto ApplyInitialLayout(const StrHashMap<D3D12_BARRIER_LAYOUT>& resource_layout, StrHashMap<BarrierTransitionInfoPerResource>& transition_info) {
-  resource_layout.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(SetLayout, &transition_info);
-}
-auto ConfigurePingpongBuffers(const uint32_t render_pass_num, RenderPassInfo* render_pass, StrHashMap<uint32_t>& pingpong_current_write_index) {
-  for (uint32_t i = 0; i < render_pass_num; i++) {
-    for (uint32_t j = 0; j < render_pass[i].srv_num; j++) {
-      const auto srv = render_pass[i].srv[j];
-      if (pingpong_current_write_index.contains(srv)) { continue; }
-      for (uint32_t k = 0; k < render_pass[i].rtv_num; k++) {
-        if (srv == render_pass[i].rtv[k]) {
-          pingpong_current_write_index[srv] = 0;
-          break;
-        }
-      }
-    }
-  }
-}
-auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const StrHashMap<BarrierTransitionInfoPerResource>& transition_info, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t result_len, StrHash* result) {
+auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const BarrierTransitionInfo& transition_info, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t result_len, StrHash* result) {
   uint32_t result_num = 0;
   for (uint32_t i = 0; i < render_pass.srv_num; i++) {
     const auto srv = render_pass.srv[i];
@@ -139,7 +97,7 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const St
     }
     if (found_rtv) { continue; }
     // looking at write because it's before flip.
-    if (transition_info[GetResourceIdPingpongWrite(srv, pingpong_current_write_index)].layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
+    if (GetCurrentTransitionInfo(srv, GetPingpongIndexWrite(pingpong_current_write_index, srv), transition_info).layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
       result[result_num] = srv;
       result_num++;
       DEBUG_ASSERT(result_num <= result_len, DebugAssert{});
@@ -157,38 +115,38 @@ auto IsReadOnlyAccess(const D3D12_BARRIER_ACCESS access) {
 }
 struct ProcessBarriersImplAsset {
   D3D12_TEXTURE_BARRIER* barriers{};
-  const StrHashMap<ID3D12Resource*>& resources{};
-  const StrHashMap<BarrierTransitionInfoPerResource>& transition_info;
-  const StrHashMap<uint32_t>& pingpong_current_write_index;
+  const ResourceSet& resource_set;
+  const BarrierTransitionInfo& transition_info;
   uint32_t barrier_index{};
 };
-void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource_id, const BarrierTransitionInfoPerResource* next_transition_info) {
-  DEBUG_ASSERT(asset->transition_info.contains(resource_id), DebugAssert{});
-  const auto& transition_info = asset->transition_info[resource_id];
-  if (next_transition_info->layout == transition_info.layout) { return; }
-  DEBUG_ASSERT(asset->resources.contains(resource_id), DebugAssert{});
-  // spdlog::info("{:x} {:x}->{:x}", resource_id, GetUint32(transition_info.layout), GetUint32(next_transition_info->layout));
-  asset->barriers[asset->barrier_index] = D3D12_TEXTURE_BARRIER{
-    .SyncBefore = transition_info.sync,
-    .SyncAfter  = next_transition_info->sync,
-    .AccessBefore = transition_info.access,
-    .AccessAfter  = next_transition_info->access,
-    .LayoutBefore = transition_info.layout,
-    .LayoutAfter  = next_transition_info->layout,
-    .pResource = asset->resources[resource_id],
-    .Subresources = {
-      .IndexOrFirstMipLevel = 0xffffffff,
-      .NumMipLevels = 0,
-      .FirstArraySlice = 0,
-      .NumArraySlices = 0,
-      .FirstPlane = 0,
-      .NumPlanes = 0,
-    },
-    .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
-  };
-  asset->barrier_index++;
+void ProcessBarriersImpl(ProcessBarriersImplAsset* asset, const StrHash resource_id, const BarrierTransitionInfoIndex* transition_info_index) {
+  for (uint32_t i = 0; i < transition_info_index->physical_resource_num; i++) {
+    const auto& transition_info = GetCurrentTransitionInfo(i, *transition_info_index, asset->transition_info);
+    const auto& next_transition_info = GetNextTransitionInfo(i, *transition_info_index, asset->transition_info);
+    if (next_transition_info.layout == transition_info.layout) { continue; }
+    // spdlog::info("{:x} {:x}->{:x}", resource_id, GetUint32(transition_info.layout), GetUint32(next_transition_info.layout));
+    asset->barriers[asset->barrier_index] = D3D12_TEXTURE_BARRIER{
+      .SyncBefore = transition_info.sync,
+      .SyncAfter  = next_transition_info.sync,
+      .AccessBefore = transition_info.access,
+      .AccessAfter  = next_transition_info.access,
+      .LayoutBefore = transition_info.layout,
+      .LayoutAfter  = next_transition_info.layout,
+      .pResource = GetResource(asset->resource_set, resource_id, i),
+      .Subresources = {
+        .IndexOrFirstMipLevel = 0xffffffff,
+        .NumMipLevels = 0,
+        .FirstArraySlice = 0,
+        .NumArraySlices = 0,
+        .FirstPlane = 0,
+        .NumPlanes = 0,
+      },
+      .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+    };
+    asset->barrier_index++;
+  }
 }
-void InitTransitionInfoImpl(StrHashMap<BarrierTransitionInfoPerResource>* transition_info, const StrHash resource_id, const ResourceInfo* resource_info) {
+void InitTransitionInfoImpl(BarrierTransitionInfo* transition_info, const StrHash resource_id, const ResourceInfo* resource_info) {
   D3D12_BARRIER_LAYOUT layout{};
   switch (resource_info->creation_type) {
     case ResourceCreationType::kRtv: {
@@ -200,65 +158,62 @@ void InitTransitionInfoImpl(StrHashMap<BarrierTransitionInfoPerResource>* transi
       break;
     }
     case ResourceCreationType::kNone: {
-      if (resource_id == "swapchain"_id) {
-        layout = D3D12_BARRIER_LAYOUT_PRESENT;
-        break;
-      }
       return;
     }
   }
-  if (resource_info->pingpong) {
-    (*transition_info)[GetPinpongResourceId(resource_id, 0)] = {
-      .sync = D3D12_BARRIER_SYNC_NONE,
-      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
-      .layout = layout,
-    };
-    (*transition_info)[GetPinpongResourceId(resource_id, 1)] = {
-      .sync = D3D12_BARRIER_SYNC_NONE,
-      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
-      .layout = layout,
-    };
-  } else {
-    (*transition_info)[resource_id] = {
-      .sync = D3D12_BARRIER_SYNC_NONE,
-      .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
-      .layout = layout,
-    };
+  AddTransitionInfo(resource_id, resource_info->pingpong ? 2 : 1, layout, *transition_info);
+}
+void UpdateTransitionInfoImpl(BarrierTransitionInfo* transition_info, const StrHash, BarrierTransitionInfoIndex* transition_info_index) {
+  for (uint32_t i = 0; i < transition_info_index->physical_resource_num; i++) {
+    transition_info->transition_info[transition_info_index->index + i] = GetNextTransitionInfo(i, *transition_info_index, *transition_info);
   }
 }
 } // namespace
 namespace boke {
-void InitTransitionInfo(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<BarrierTransitionInfoPerResource>& transition_info) {
-  resource_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(InitTransitionInfoImpl, &transition_info);
+void InitTransitionInfo(const StrHashMap<ResourceInfo>& resource_info, BarrierTransitionInfo& transition_info) {
+  resource_info.iterate<BarrierTransitionInfo>(InitTransitionInfoImpl, &transition_info);
 }
-void UpdateTransitionInfo(BarrierSet& barrier_set) {
-  barrier_set.next_transition_info->iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, barrier_set.transition_info);
-  barrier_set.next_transition_info->clear();
+void AddTransitionInfo(const StrHash resource_id, const uint32_t transition_num, const D3D12_BARRIER_LAYOUT layout, BarrierTransitionInfo& transition_info) {
+  const uint32_t current_size = transition_info.transition_info.size();
+  BarrierTransitionInfoIndex transition_info_index{
+    .physical_resource_num = transition_num,
+    .index = current_size,
+  };
+  BarrierTransitionInfoPerResource info{
+    .sync = D3D12_BARRIER_SYNC_NONE,
+    .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
+    .layout = layout,
+  };
+  while (transition_info.transition_info.size() < transition_info_index.index + transition_num * 2) {
+    transition_info.transition_info.push_back(info);
+  }
+  transition_info.transition_info_index[resource_id] = transition_info_index;
 }
-void FlipPingPongIndex(const RenderPassInfo& render_pass_info, const BarrierSet& barrier_set, StrHashMap<uint32_t>& pingpong_current_write_index) {
+void UpdateTransitionInfo(BarrierTransitionInfo& transition_info) {
+  transition_info.transition_info_index.iterate<BarrierTransitionInfo>(UpdateTransitionInfoImpl, &transition_info);
+}
+void FlipPingPongIndex(const RenderPassInfo& render_pass_info, const BarrierTransitionInfo& transition_info, StrHashMap<uint32_t>& pingpong_current_write_index) {
   const uint32_t pingpong_flip_list_len = 8;
   StrHash pingpong_flip_list[pingpong_flip_list_len]{};
-  const auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info, *barrier_set.transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
+  const auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info, transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   DEBUG_ASSERT(current_render_pass_pingpong_flip_list_result_len <= pingpong_flip_list_len, DebugAssert{});
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
 }
-void ConfigureRenderPassBarriersTextureTransitions(const RenderPassInfo& render_pass_info, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierSet& barrier_set) {
-  ConfigureBarriersTextureTransitions(render_pass_info, pingpong_current_write_index, *barrier_set.transition_info, *barrier_set.next_transition_info);
+void ConfigureRenderPassBarriersTextureTransitions(const RenderPassInfo& render_pass_info, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierTransitionInfo& transition_info) {
+  ConfigureBarriersTextureTransitions(render_pass_info, pingpong_current_write_index, transition_info);
 }
-void ProcessBarriers(const BarrierSet& barrier_set, const StrHashMap<ID3D12Resource*>& resources, const StrHashMap<uint32_t>& pingpong_current_write_index, D3d12CommandList* command_list) {
-  if (barrier_set.next_transition_info->empty()) { return; }
+void ProcessBarriers(const BarrierTransitionInfo& transition_info, const ResourceSet& resource_set, D3d12CommandList* command_list) {
   const uint32_t barrier_num = 16;
-  DEBUG_ASSERT(barrier_set.next_transition_info->size() <= barrier_num, DebugAssert{});
   D3D12_TEXTURE_BARRIER barriers[barrier_num]{};
   ProcessBarriersImplAsset asset{
     .barriers = barriers,
-    .resources = resources,
-    .transition_info = *barrier_set.transition_info,
-    .pingpong_current_write_index = pingpong_current_write_index,
+    .resource_set = resource_set,
+    .transition_info = transition_info,
     .barrier_index = 0,
   };
-  barrier_set.next_transition_info->iterate<ProcessBarriersImplAsset>(ProcessBarriersImpl, &asset);
+  transition_info.transition_info_index.iterate<ProcessBarriersImplAsset>(ProcessBarriersImpl, &asset);
   if (asset.barrier_index == 0) { return; }
+  DEBUG_ASSERT(asset.barrier_index <= barrier_num, DebugAssert{});
   D3D12_BARRIER_GROUP barrier_group {
     .Type = D3D12_BARRIER_TYPE_TEXTURE,
     .NumBarriers = asset.barrier_index,
@@ -266,11 +221,11 @@ void ProcessBarriers(const BarrierSet& barrier_set, const StrHashMap<ID3D12Resou
   };
   command_list->Barrier(1, &barrier_group);
 }
-void ResetBarrierSyncAccessStatus(BarrierSet& barrier_set) {
-  barrier_set.transition_info->iterate([](const StrHash, BarrierTransitionInfoPerResource* info) {
-    info->sync = D3D12_BARRIER_SYNC_NONE;
-    info->access = D3D12_BARRIER_ACCESS_NO_ACCESS;
-  });
+void ResetBarrierSyncAccessStatus(BarrierTransitionInfo& transition_info) {
+  for (auto& info : transition_info.transition_info) {
+    info.sync = D3D12_BARRIER_SYNC_NONE;
+    info.access = D3D12_BARRIER_ACCESS_NO_ACCESS;
+  }
 }
 }
 #include "doctest/doctest.h"
@@ -331,298 +286,453 @@ TEST_CASE("barrier config") {
     },
   };
   StrHashMap<uint32_t> pingpong_current_write_index(GetAllocatorCallbacks(allocator_data));
-  ConfigurePingpongBuffers(render_pass_info_len, render_pass_info, pingpong_current_write_index);
-  CHECK_EQ(pingpong_current_write_index.size(), 1);
-  CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
-  StrHashMap<BarrierTransitionInfoPerResource> transition_info(GetAllocatorCallbacks(allocator_data));
-  {
-    StrHashMap<D3D12_BARRIER_LAYOUT> initial_layout(GetAllocatorCallbacks(allocator_data));
-    ConfigureInitialLayout(render_pass_info_len, render_pass_info, pingpong_current_write_index, initial_layout);
-    CHECK_EQ(initial_layout["gbuffer0"_id], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout["gbuffer1"_id], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout["gbuffer2"_id], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout["gbuffer3"_id], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout["depth"_id], D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-    CHECK_EQ(initial_layout[GetPinpongResourceId("primary"_id, 0)], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout[GetPinpongResourceId("primary"_id, 1)], D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(initial_layout["swapchain"_id], D3D12_BARRIER_LAYOUT_PRESENT);
-    ApplyInitialLayout(initial_layout, transition_info);
-    CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-    CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-    CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  }
-  transition_info["imgui_font"_id].layout = D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE;
+  pingpong_current_write_index["primary"_id] = 0;
+  StrHashMap<BarrierTransitionInfoIndex> transition_info_index(GetAllocatorCallbacks(allocator_data));
+  Array<BarrierTransitionInfoPerResource> transition_info_internal(GetAllocatorCallbacks(allocator_data));
+  BarrierTransitionInfo transition_info{
+    .transition_info_index = transition_info_index,
+    .transition_info = transition_info_internal,
+  };
+  StrHashMap<ResourceInfo> resource_info(GetAllocatorCallbacks(allocator_data));
+  ParseResourceInfo(GetJson("tests/resources.json", allocator_data), resource_info);
+  InitTransitionInfo(resource_info, transition_info);
+  CHECK_EQ(transition_info.transition_info_index.size(), 6);
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer0"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer1"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer2"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer3"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("depth"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("primary"_id));
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  AddTransitionInfo("swapchain"_id, 1, D3D12_BARRIER_LAYOUT_PRESENT, transition_info);
+  CHECK_EQ(transition_info.transition_info_index.size(), 7);
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer0"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer1"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer2"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("gbuffer3"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("depth"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("primary"_id));
+  CHECK_UNARY(transition_info.transition_info_index.contains("swapchain"_id));
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
   const uint32_t pingpong_flip_list_len = 16;
   StrHash pingpong_flip_list[pingpong_flip_list_len]{};
-  StrHashMap<BarrierTransitionInfoPerResource> next_transition_info(GetAllocatorCallbacks(allocator_data));
   // gbuffer
   auto current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[0], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
-  ConfigureBarriersTextureTransitions(render_pass_info[0], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 5);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(next_transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  ConfigureBarriersTextureTransitions(render_pass_info[0], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
   // lighting
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[1], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
-  ConfigureBarriersTextureTransitions(render_pass_info[1], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 5);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  ConfigureBarriersTextureTransitions(render_pass_info[1], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
   // tonemap
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[2], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 1);
   CHECK_EQ(pingpong_flip_list[0], "primary"_id);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 1);
-  ConfigureBarriersTextureTransitions(render_pass_info[2], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 2);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  ConfigureBarriersTextureTransitions(render_pass_info[2], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
   // oetf
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[3], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 1);
   CHECK_EQ(pingpong_flip_list[0], "primary"_id);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
-  ConfigureBarriersTextureTransitions(render_pass_info[3], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 2);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(next_transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  ConfigureBarriersTextureTransitions(render_pass_info[3], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
   // imgui
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[4], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
-  ConfigureBarriersTextureTransitions(render_pass_info[4], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 1);
-  CHECK_EQ(next_transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(next_transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(next_transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  ConfigureBarriersTextureTransitions(render_pass_info[4], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_RENDER_TARGET);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_RENDER_TARGET);
   // present
   current_render_pass_pingpong_flip_list_result_len = GetPingPongFlippingResourceList(render_pass_info[5], transition_info, pingpong_current_write_index, pingpong_flip_list_len, pingpong_flip_list);
   CHECK_EQ(current_render_pass_pingpong_flip_list_result_len, 0);
   FlipPingPongIndexImpl(current_render_pass_pingpong_flip_list_result_len, pingpong_flip_list, pingpong_current_write_index);
   CHECK_EQ(pingpong_current_write_index["primary"_id], 0);
-  ConfigureBarriersTextureTransitions(render_pass_info[5], pingpong_current_write_index, transition_info, next_transition_info);
-  CHECK_EQ(next_transition_info.size(), 1);
-  CHECK_EQ(next_transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  CHECK_EQ(next_transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(next_transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
-  next_transition_info.iterate<StrHashMap<BarrierTransitionInfoPerResource>>(UpdateTransitionInfoEntity, &transition_info);
-  next_transition_info.clear();
-  CHECK_EQ(transition_info["gbuffer0"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].layout, D3D12_BARRIER_LAYOUT_PRESENT);
-  CHECK_EQ(transition_info["gbuffer0"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer1"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer2"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["gbuffer3"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["depth"_id].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["imgui_font"_id].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
-  CHECK_EQ(transition_info["swapchain"_id].sync, D3D12_BARRIER_SYNC_NONE);
-  CHECK_EQ(transition_info["gbuffer0"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer1"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer2"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["gbuffer3"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["depth"_id].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 0)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info[GetPinpongResourceId("primary"_id, 1)].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["imgui_font"_id].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-  CHECK_EQ(transition_info["swapchain"_id].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  ConfigureBarriersTextureTransitions(render_pass_info[5], pingpong_current_write_index, transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index + 1].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 2].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 3].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index + 1].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  UpdateTransitionInfo(transition_info);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].layout, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].layout, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].layout, D3D12_BARRIER_LAYOUT_PRESENT);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].sync, D3D12_BARRIER_SYNC_DEPTH_STENCIL);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].sync, D3D12_BARRIER_SYNC_PIXEL_SHADING);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].sync, D3D12_BARRIER_SYNC_NONE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer0"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer1"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer2"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["gbuffer3"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["depth"_id].index].access, D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
+  CHECK_EQ(transition_info.transition_info[transition_info.transition_info_index["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
 }
