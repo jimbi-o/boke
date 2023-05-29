@@ -99,31 +99,41 @@ auto CreatePso(D3d12Device* device, CD3DX12_PIPELINE_STATE_STREAM5_PARSE_HELPER&
 }
 } // namespace
 namespace boke {
-void CreateMaterialSet(const rapidjson::Value& json, D3d12Device* device, MaterialSet& material_set) {
+struct MaterialSet {
+  StrHashMap<StrHash>* material_rootsig_map{};
+  StrHashMap<ID3D12RootSignature*>* rootsig_list{};
+  StrHashMap<ID3D12PipelineState*>* pso_list{};
+};
+MaterialSet* CreateMaterialSet(const rapidjson::Value& json, D3d12Device* device) {
+  auto material_set = New<MaterialSet>();
+  material_set->material_rootsig_map = New<StrHashMap<StrHash>>();
+  material_set->rootsig_list = New<StrHashMap<ID3D12RootSignature*>>();
+  material_set->pso_list = New<StrHashMap<ID3D12PipelineState*>>();
   for (const auto& material : json.GetArray()) {
-    auto [rootsig_id, rootsig] = LoadRootsig(material["rootsig"], device, *material_set.rootsig_list);
+    auto [rootsig_id, rootsig] = LoadRootsig(material["rootsig"], device, *material_set->rootsig_list);
     auto stream = CreatePsoDesc(material, rootsig);
     auto pso = CreatePso(device, stream);
     CleanupShaderObject(stream);
     SetD3d12Name(pso, material["name"].GetString());
     const auto material_id = GetStrHash(material["name"].GetString());
-    material_set.pso_list->insert(material_id, pso);
-    material_set.material_rootsig_map->insert(material_id, rootsig_id);
+    material_set->pso_list->insert(material_id, pso);
+    material_set->material_rootsig_map->insert(material_id, rootsig_id);
   }
+  return material_set;
 }
-void ReleaseMaterialSet(MaterialSet& material_set) {
-  material_set.rootsig_list->iterate([](const StrHash, ID3D12RootSignature** rootsig) { (*rootsig)->Release(); });
-  material_set.pso_list->iterate([](const StrHash, ID3D12PipelineState** pso) { (*pso)->Release(); });
-  material_set.rootsig_list->~StrHashMap<ID3D12RootSignature*>();
-  material_set.pso_list->~StrHashMap<ID3D12PipelineState*>();
-  material_set.material_rootsig_map->~StrHashMap<StrHash>();
+void ReleaseMaterialSet(MaterialSet* material_set) {
+  material_set->rootsig_list->iterate([](const StrHash, ID3D12RootSignature** rootsig) { (*rootsig)->Release(); });
+  material_set->pso_list->iterate([](const StrHash, ID3D12PipelineState** pso) { (*pso)->Release(); });
+  material_set->rootsig_list->~StrHashMap<ID3D12RootSignature*>();
+  material_set->pso_list->~StrHashMap<ID3D12PipelineState*>();
+  material_set->material_rootsig_map->~StrHashMap<StrHash>();
 }
-ID3D12RootSignature* GetRootsig(const MaterialSet& material_set, const StrHash material_id) {
-  const auto& rootsig_id = (*material_set.material_rootsig_map)[material_id];
-  return (*material_set.rootsig_list)[rootsig_id];
+ID3D12RootSignature* GetRootsig(const MaterialSet* material_set, const StrHash material_id) {
+  const auto& rootsig_id = (*material_set->material_rootsig_map)[material_id];
+  return (*material_set->rootsig_list)[rootsig_id];
 }
-ID3D12PipelineState* GetPso(const MaterialSet& material_set, const StrHash material_id) {
-  return (*material_set.pso_list)[material_id];
+ID3D12PipelineState* GetPso(const MaterialSet* material_set, const StrHash material_id) {
+  return (*material_set->pso_list)[material_id];
 }
 } // namespace boke
 #include "doctest/doctest.h"

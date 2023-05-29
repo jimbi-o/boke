@@ -289,7 +289,7 @@ struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
   ResourceSet& resource_set;
   DescriptorHandles* descriptor_handles;
-  MaterialSet& material_set;
+  MaterialSet* material_set;
   Size2d primarybuffer_size{};
 };
 struct RenderPassFuncIndividualParams {
@@ -764,15 +764,7 @@ TEST_CASE("multiple render pass") {
     Deallocate(swapchain_resources);
   }
   // materials
-  StrHashMap<StrHash> material_rootsig_map;
-  StrHashMap<ID3D12RootSignature*> rootsig_list;
-  StrHashMap<ID3D12PipelineState*> pso_list;
-  MaterialSet material_set {
-    .material_rootsig_map = &material_rootsig_map,
-    .rootsig_list = &rootsig_list,
-    .pso_list = &pso_list,
-  };
-  CreateMaterialSet(json["material"], device, material_set);
+  auto material_set = CreateMaterialSet(json["material"], device);
   // render pass
   StrHashMap<RenderPass> render_pass_list;
   ParseRenderPassList(json["render_pass"], render_pass_list);
