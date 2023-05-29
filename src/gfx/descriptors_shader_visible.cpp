@@ -15,7 +15,7 @@ using namespace boke;
 uint32_t GetShaderVisibleDescriptorNum(const RenderPassInfo& render_pass_info) {
   return render_pass_info.srv_num;
 }
-void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_info, const DescriptorHandles& descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t increment_size, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& dst_handle, const uint32_t dst_handle_num) {
+void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t increment_size, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& dst_handle, const uint32_t dst_handle_num) {
   DEBUG_ASSERT(render_pass_info.srv_num == dst_handle_num, DebugAssert{});
   if (render_pass_info.srv_num == 0) { return; }
   const uint32_t src_descriptor_num_len = 16;
@@ -41,7 +41,7 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
 }
 } // namespace
 namespace boke {
-D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles& descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num) {
+D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num) {
   const auto dst_handle_num = GetShaderVisibleDescriptorNum(render_pass_info);
   if (dst_handle_num == 0) { return {}; }
   if (info.reserved_handle_num + *occupied_handle_num + dst_handle_num > info.total_handle_num) {

@@ -755,4 +755,5 @@ TEST_CASE("barrier config") {
   CHECK_EQ((*transition_info->transition_info)[(*transition_info->transition_info_index)["primary"_id].index].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
   CHECK_EQ((*transition_info->transition_info)[(*transition_info->transition_info_index)["primary"_id].index + 1].access, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
   CHECK_EQ((*transition_info->transition_info)[(*transition_info->transition_info_index)["swapchain"_id].index].access, D3D12_BARRIER_ACCESS_NO_ACCESS);
+  ReleaseTransitionInfo(transition_info);
 }

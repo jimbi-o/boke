@@ -288,7 +288,7 @@ auto ReleaseGfxCore(GfxCoreUnit& core) {
 struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
   ResourceSet& resource_set;
-  DescriptorHandles& descriptor_handles;
+  DescriptorHandles* descriptor_handles;
   MaterialSet& material_set;
   Size2d primarybuffer_size{};
 };
@@ -714,17 +714,7 @@ TEST_CASE("multiple render pass") {
   // descriptor handles
   const auto swapchain_buffer_num = frame_buffer_num + 1;
   auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
-  StrHashMap<HandleIndex> handle_index;
-  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> rtv_handles;
-  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> dsv_handles;
-  ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE> cbv_srv_uav_handles;
-  DescriptorHandles descriptor_handles{
-    .handle_index = handle_index,
-    .rtv_handles = rtv_handles,
-    .dsv_handles = dsv_handles,
-    .cbv_srv_uav_handles = cbv_srv_uav_handles,
-  };
-  PrepareDescriptorHandles(resource_info, resource_set, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);
+  auto descriptor_handles = PrepareDescriptorHandles(resource_info, resource_set, device, descriptor_heaps.head_addr, descriptor_heaps.increment_size);
   // descriptor handles (gpu)
   const uint32_t shader_visible_descriptor_handle_num = json["descriptor_handles"]["shader_visible_buffer_num"].GetUint();
   auto shader_visible_descriptor_heap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shader_visible_descriptor_handle_num, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
@@ -860,10 +850,7 @@ TEST_CASE("multiple render pass") {
   command_queue->Release();
   ReleaseTransitionInfo(transition_info);
   shader_visible_descriptor_heap->Release();
-  handle_index.~StrHashMap<HandleIndex>();
-  rtv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  dsv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
-  cbv_srv_uav_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
+  ReleaseDescriptorHandles(descriptor_handles);
   ReleaseDescriptorHeaps(descriptor_heaps);
   ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
