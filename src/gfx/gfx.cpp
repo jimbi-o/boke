@@ -737,13 +737,7 @@ TEST_CASE("multiple render pass") {
   };
   uint32_t shader_visible_descriptor_handle_occupied_handle_num = 0;
   // barrier resources
-  StrHashMap<BarrierTransitionInfoIndex> transition_info_index;
-  ResizableArray<BarrierTransitionInfoPerResource> transition_info_internal;
-  BarrierTransitionInfo transition_info{
-    .transition_info_index = transition_info_index,
-    .transition_info = transition_info_internal,
-  };
-  InitTransitionInfo(resource_info, transition_info);
+  auto transition_info = InitTransitionInfo(resource_info);
   // command queue & fence
   auto command_queue = CreateCommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, D3D12_COMMAND_QUEUE_FLAG_NONE);
   auto fence = CreateFence(device);
@@ -864,6 +858,7 @@ TEST_CASE("multiple render pass") {
   }
   fence->Release();
   command_queue->Release();
+  ReleaseTransitionInfo(transition_info);
   shader_visible_descriptor_heap->Release();
   handle_index.~StrHashMap<HandleIndex>();
   rtv_handles.~ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>();
