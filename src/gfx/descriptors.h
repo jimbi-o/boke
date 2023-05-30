@@ -36,7 +36,7 @@ struct DescriptorHeaps;
 struct DescriptorHandles;
 DescriptorHeapSet CreateDescriptorHeaps(const StrHashMap<ResourceInfo>& resource_info, D3d12Device* device, const DescriptorHandleNum& extra_handle_num);
 void ReleaseDescriptorHeaps(DescriptorHeapSet&);
-DescriptorHandles* PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const ResourceSet& resource_set, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size);
+DescriptorHandles* PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const ResourceSet* resource_set, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size);
 void ReleaseDescriptorHandles(DescriptorHandles*);
 void AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);
 void AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);

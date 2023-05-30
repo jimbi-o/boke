@@ -118,7 +118,7 @@ auto GetDescriptorHandle(const D3D12_CPU_DESCRIPTOR_HANDLE& head_addr, const uin
   };
 }
 struct DescriptorHandleImplAsset {
-  const ResourceSet& resource_set;
+  const ResourceSet* resource_set;
   D3d12Device* device{};
   const DescriptorHeapHeadAddr& descriptor_heap_head_addr{};
   const DescriptorHandleIncrementSize& descriptor_handle_increment_size{};
@@ -163,7 +163,7 @@ void ReleaseDescriptorHeaps(DescriptorHeapSet& descriptor_heaps) {
   descriptor_heaps.descriptor_heaps.dsv->Release();
   descriptor_heaps.descriptor_heaps.cbv_srv_uav->Release();
 }
-DescriptorHandles* PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const ResourceSet& resource_set, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size) {
+DescriptorHandles* PrepareDescriptorHandles(const StrHashMap<ResourceInfo>& resource_info, const ResourceSet* resource_set, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size) {
   auto descriptor_handles = New<DescriptorHandles>();
   descriptor_handles->handle_index = New<StrHashMap<HandleIndex>>();
   descriptor_handles->rtv_handles = New<ResizableArray<D3D12_CPU_DESCRIPTOR_HANDLE>>();
@@ -258,10 +258,7 @@ TEST_CASE("descriptors") {
   ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device);
-  StrHashMap<uint32_t> resource_index;
-  ResizableArray<D3D12MA::Allocation*> allocations;
-  ResizableArray<ID3D12Resource*> resources;
-  auto resource_set = CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
+  auto resource_set = CreateResources(resource_info, gpu_memory_allocator);
   // prepare descriptor handles
   auto descriptor_handle_increment_size = GetDescriptorHandleIncrementSize(device);
   auto descriptor_handle_num = CountDescriptorHandleNum(resource_info);
@@ -325,7 +322,7 @@ TEST_CASE("descriptors") {
   CHECK_EQ(descriptor_handles->dsv_handles->size(), 1);
   CHECK_EQ(descriptor_handles->cbv_srv_uav_handles->size(), 6);
   ReleaseDescriptorHandles(descriptor_handles);
-  ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
+  ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();

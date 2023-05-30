@@ -132,7 +132,7 @@ auto IsReadOnlyAccess(const D3D12_BARRIER_ACCESS access) {
 }
 struct ProcessBarriersImplAsset {
   D3D12_TEXTURE_BARRIER* barriers{};
-  const ResourceSet& resource_set;
+  const ResourceSet* resource_set;
   const BarrierTransitionInfo* transition_info;
   uint32_t barrier_index{};
 };
@@ -228,7 +228,7 @@ void FlipPingPongIndex(const RenderPassInfo& render_pass_info, const BarrierTran
 void ConfigureRenderPassBarriersTextureTransitions(const RenderPassInfo& render_pass_info, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierTransitionInfo* transition_info) {
   ConfigureBarriersTextureTransitions(render_pass_info, pingpong_current_write_index, transition_info);
 }
-void ProcessBarriers(const BarrierTransitionInfo* transition_info, const ResourceSet& resource_set, D3d12CommandList* command_list) {
+void ProcessBarriers(const BarrierTransitionInfo* transition_info, const ResourceSet* resource_set, D3d12CommandList* command_list) {
   const uint32_t barrier_num = 16;
   D3D12_TEXTURE_BARRIER barriers[barrier_num]{};
   ProcessBarriersImplAsset asset{

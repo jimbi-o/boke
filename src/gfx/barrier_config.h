@@ -11,6 +11,6 @@ void AddTransitionInfo(const StrHash resource_id, const uint32_t transition_num,
 void UpdateTransitionInfo(BarrierTransitionInfo* transition_info);
 void FlipPingPongIndex(const RenderPassInfo& render_pass_info, const BarrierTransitionInfo* transition_info, StrHashMap<uint32_t>& pingpong_current_write_index);
 void ConfigureRenderPassBarriersTextureTransitions(const RenderPassInfo& render_pass_info, const StrHashMap<uint32_t>& pingpong_current_write_index, BarrierTransitionInfo* transition_info);
-void ProcessBarriers(const BarrierTransitionInfo* transition_info, const ResourceSet& resource_set, D3d12CommandList* command_list);
+void ProcessBarriers(const BarrierTransitionInfo* transition_info, const ResourceSet* resource_set, D3d12CommandList* command_list);
 void ResetBarrierSyncAccessStatus(BarrierTransitionInfo* transition_info);
 }

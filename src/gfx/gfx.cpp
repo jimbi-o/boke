@@ -287,7 +287,7 @@ auto ReleaseGfxCore(GfxCoreUnit& core) {
 }
 struct RenderPassFuncCommonParams {
   StrHashMap<uint32_t>& pingpong_current_write_index;
-  ResourceSet& resource_set;
+  ResourceSet* resource_set;
   DescriptorHandles* descriptor_handles;
   MaterialSet* material_set;
   Size2d primarybuffer_size{};
@@ -707,10 +707,7 @@ TEST_CASE("multiple render pass") {
   CollectResourceNames(resource_info, resource_name);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device);
-  StrHashMap<uint32_t> resource_index;
-  ResizableArray<D3D12MA::Allocation*> allocations;
-  ResizableArray<ID3D12Resource*> resources;
-  auto resource_set = CreateResources(resource_info, gpu_memory_allocator, resource_index, allocations, resources);
+  auto resource_set = CreateResources(resource_info, gpu_memory_allocator);
   // descriptor handles
   const auto swapchain_buffer_num = frame_buffer_num + 1;
   auto descriptor_heaps = CreateDescriptorHeaps(resource_info, device, {swapchain_buffer_num, 0, 1/*imgui_font*/});
@@ -844,7 +841,7 @@ TEST_CASE("multiple render pass") {
   shader_visible_descriptor_heap->Release();
   ReleaseDescriptorHandles(descriptor_handles);
   ReleaseDescriptorHeaps(descriptor_heaps);
-  ReleaseResources(std::move(resource_index), std::move(allocations), std::move(resources));
+  ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   pingpong_current_write_index.~StrHashMap<uint32_t>();
   resource_name.~StrHashMap<const char*>();
