@@ -849,5 +849,5 @@ TEST_CASE("multiple render pass") {
   device->Release();
   ReleaseGfxCore(core);
   TermStrHashSystem();
-  //delete[] main_buffer; // TODO comment-in
+  delete[] main_buffer;
 }

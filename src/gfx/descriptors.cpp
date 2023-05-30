@@ -322,6 +322,9 @@ TEST_CASE("descriptors") {
   CHECK_EQ(descriptor_handles->dsv_handles->size(), 1);
   CHECK_EQ(descriptor_handles->cbv_srv_uav_handles->size(), 6);
   ReleaseDescriptorHandles(descriptor_handles);
+  descriptor_heaps.rtv->Release();;
+  descriptor_heaps.dsv->Release();;
+  descriptor_heaps.cbv_srv_uav->Release();;
   ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   resource_info.~StrHashMap<ResourceInfo>();
