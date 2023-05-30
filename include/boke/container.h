@@ -16,6 +16,7 @@ class ResizableArray final {
   constexpr uint32_t size() const { return size_; }
   constexpr uint32_t capacity() const { return capacity_; }
   constexpr bool empty() const { return size() == 0; }
+  void reserve(const uint32_t capacity);
   /**
    * reset size to zero.
    * destructor for T is not called.
@@ -65,6 +66,7 @@ class StrHashMap final {
   constexpr uint32_t size() const { return size_; }
   constexpr uint32_t capacity() const { return capacity_; }
   constexpr bool empty() const { return size() == 0; }
+  void reserve(const uint32_t capacity);
   /**
    * clear entries and reset size to zero.
    * destructor for T is not called.
@@ -152,6 +154,10 @@ void ResizableArray<T>::release_allocated_buffer() {
   head_ = nullptr;
 }
 template <typename T>
+void ResizableArray<T>::reserve(const uint32_t capacity) {
+  change_capacity(capacity);
+}
+template <typename T>
 void ResizableArray<T>::push_back(T val) {
   auto index = size_;
   size_++;
@@ -235,6 +241,10 @@ StrHashMap<T>& StrHashMap<T>::operator=(StrHashMap&& other)
 template <typename T>
 StrHashMap<T>::~StrHashMap() {
   release_allocated_buffer();
+}
+template <typename T>
+void StrHashMap<T>::reserve(const uint32_t capacity) {
+  change_capacity(GetLargerOrEqualPrimeNumber(capacity));
 }
 template <typename T>
 void StrHashMap<T>::clear() {

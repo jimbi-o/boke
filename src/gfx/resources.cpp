@@ -165,6 +165,13 @@ auto GetResourceFlags(const rapidjson::Value& array) {
   }
   return flag;
 }
+auto GetTotalPhysicalResourceNum(const StrHashMap<ResourceInfo>& resource_info) {
+  uint32_t sum = 0;
+  resource_info.iterate<uint32_t>([](uint32_t* sum, const StrHash, const ResourceInfo* info) {
+    *sum += info->pingpong ? 2 : 1;
+  }, &sum);
+  return sum;
+}
 } // namespace
 namespace boke {
 DXGI_FORMAT GetDxgiFormat(const char* format) {
@@ -266,13 +273,10 @@ ResourceSet* CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D1
   resource_set->resource_index = New<StrHashMap<uint32_t>>();
   resource_set->allocations = New<ResizableArray<D3D12MA::Allocation*>>();
   resource_set->resources = New<ResizableArray<ID3D12Resource*>>();
-  // TODO impl reserve to tote
-  /*
-  resource_index->reserve(resource_info.size());
-  const uint32_t physical_resource_num = GetResourceNum(resource_info);
-  allocations.reserve(physical_resource_num);
-  resources.reserve(physical_resource_num);
-  */
+  resource_set->resource_index->reserve(resource_info.size());
+  const uint32_t physical_resource_num = GetTotalPhysicalResourceNum(resource_info);
+  resource_set->allocations->reserve(physical_resource_num);
+  resource_set->resources->reserve(physical_resource_num);
   ResourceSetCreationAsseet asset{
     .allocator = allocator,
     .resource_index = resource_set->resource_index,
