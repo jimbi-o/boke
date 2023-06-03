@@ -37,15 +37,14 @@ auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
 }
 void CountDescriptorHandleNumImpl(DescriptorHandleNum* descriptor_handle_num, const StrHash, const ResourceInfo* resource_info) {
   if (resource_info->flags == D3D12_RESOURCE_FLAG_NONE) { return; }
-  const uint32_t add_val = resource_info->pingpong ? 2 : 1;
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
-    descriptor_handle_num->rtv += add_val;
+    descriptor_handle_num->rtv += resource_info->physical_resource_num;
   }
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
-    descriptor_handle_num->dsv += add_val;
+    descriptor_handle_num->dsv += resource_info->physical_resource_num;
   }
   if (!(resource_info->flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)) {
-    descriptor_handle_num->cbv_srv_uav += add_val;
+    descriptor_handle_num->cbv_srv_uav += resource_info->physical_resource_num;
   }
 }
 auto CountDescriptorHandleNum(const StrHashMap<ResourceInfo>& resouce_info) {
@@ -126,20 +125,19 @@ struct DescriptorHandleImplAsset {
 };
 void PrepareDescriptorHandlesImpl(DescriptorHandleImplAsset* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
   if (resource_info->flags == D3D12_RESOURCE_FLAG_NONE) { return; }
-  const uint32_t count = resource_info->pingpong ? 2 : 1;
   ID3D12Resource* resource[2];
-  for (uint32_t i = 0; i < count; i++) {
+  for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
     resource[i] = GetResource(asset->resource_set, resource_id, i);
   }
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
-    AddDescriptorHandlesRtv(resource_id, resource_info->format, resource, count, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+    AddDescriptorHandlesRtv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
   }
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
-    DEBUG_ASSERT(count == 1, DebugAssert{});
-    AddDescriptorHandlesDsv(resource_id, resource_info->format, resource, count, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+    DEBUG_ASSERT(resource_info->physical_resource_num == 1, DebugAssert{});
+    AddDescriptorHandlesDsv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
   }
   if (!(resource_info->flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)) {
-    AddDescriptorHandlesSrv(resource_id, resource_info->format, resource, count, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+    AddDescriptorHandlesSrv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
   }
 }
 } // namespace

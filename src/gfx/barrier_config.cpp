@@ -178,7 +178,7 @@ void InitTransitionInfoImpl(BarrierTransitionInfo* transition_info, const StrHas
       return;
     }
   }
-  AddTransitionInfo(resource_id, resource_info->pingpong ? 2 : 1, layout, transition_info);
+  AddTransitionInfo(resource_id, resource_info->physical_resource_num, layout, transition_info);
 }
 void UpdateTransitionInfoImpl(BarrierTransitionInfo* transition_info, const StrHash, BarrierTransitionInfoIndex* transition_info_index) {
   for (uint32_t i = 0; i < transition_info_index->physical_resource_num; i++) {

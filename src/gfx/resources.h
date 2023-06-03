@@ -20,7 +20,8 @@ struct ResourceInfo {
   D3D12_RESOURCE_FLAGS flags{};
   DXGI_FORMAT format{};
   Size2d size{};
-  bool pingpong{};
+  uint32_t physical_resource_num{};
+  bool pingpong{false};
 };
 struct ResourceSet;
 DXGI_FORMAT GetDxgiFormat(const char* format);

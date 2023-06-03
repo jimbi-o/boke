@@ -104,17 +104,15 @@ struct ResourceSetCreationAsseet {
 };
 void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
   D3D12MA::Allocation* allocation[2];
-  uint32_t allocation_num = 1;
   switch (resource_info->creation_type) {
     case ResourceCreationType::kRtv: {
-      allocation[0] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
-      if (resource_info->pingpong) {
-        allocation_num++;
-        allocation[1] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+      for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
+        allocation[i] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       }
       break;
     }
     case ResourceCreationType::kDsv: {
+      DEBUG_ASSERT(resource_info->physical_resource_num == 1, DebugAssert{});
       allocation[0] = CreateTexture2dDsv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
       break;
     }
@@ -123,7 +121,7 @@ void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource
     }
   }
   (*asset->resource_index)[resource_id] = asset->allocations->size();
-  for (uint32_t i = 0; i < allocation_num; i++) {
+  for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
     asset->allocations->push_back(allocation[i]);
     asset->resources->push_back(allocation[i]->GetResource());
     SetD3d12Name(allocation[i]->GetResource(), resource_id, i);
@@ -168,7 +166,7 @@ auto GetResourceFlags(const rapidjson::Value& array) {
 auto GetTotalPhysicalResourceNum(const StrHashMap<ResourceInfo>& resource_info) {
   uint32_t sum = 0;
   resource_info.iterate<uint32_t>([](uint32_t* sum, const StrHash, const ResourceInfo* info) {
-    *sum += info->pingpong ? 2 : 1;
+    *sum += info->physical_resource_num;
   }, &sum);
   return sum;
 }
@@ -226,6 +224,7 @@ void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInf
       .flags = GetResourceFlags(resource["flags"]),
       .format = GetDxgiFormat(resource["format"].GetString()),
       .size = GetSize2d(resource["size"]),
+      .physical_resource_num = resource["pingpong"].GetBool() ? 2U : 1U,
       .pingpong = resource["pingpong"].GetBool(),
     };
   }
