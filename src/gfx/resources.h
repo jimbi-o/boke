@@ -26,9 +26,9 @@ struct ResourceInfo {
 struct ResourceSet;
 DXGI_FORMAT GetDxgiFormat(const char* format);
 Size2d GetSize2d(const rapidjson::Value&);
-void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info);
-void InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& current_write_index_list);
-void CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<const char*>& resource_name);
+StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources);
+StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info);
+StrHashMap<const char*> CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info);
 D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device);
 void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator);
 ResourceSet* CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator);

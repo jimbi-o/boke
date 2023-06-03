@@ -215,7 +215,8 @@ Size2d GetSize2d(const rapidjson::Value& array) {
     .height = array[1].GetUint(),
   };
 }
-void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInfo>& resource_info) {
+StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
+  StrHashMap<ResourceInfo> resource_info;
   for (const auto& resource : resources.GetArray()) {
     const auto name = resource["name"].GetString();
     const auto hash = GetStrHash(name);
@@ -228,11 +229,14 @@ void ParseResourceInfo(const rapidjson::Value& resources, StrHashMap<ResourceInf
       .pingpong = resource["pingpong"].GetBool(),
     };
   }
+  return resource_info;
 }
-void CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<const char*>& resource_name) {
+StrHashMap<const char*> CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info) {
+  StrHashMap<const char*> resource_name;
   resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo*) {
     resource_name->insert(resource_id, GetStr(resource_id));},
     &resource_name);
+  return resource_name;
 }
 ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, const uint32_t index) {
   return (*resource_set->resources)[(*resource_set->resource_index)[id] + index];
@@ -294,12 +298,14 @@ void ReleaseResources(ResourceSet* resource_set) {
   resource_set->allocations->~ResizableArray<D3D12MA::Allocation*>();
   resource_set->resources->~ResizableArray<ID3D12Resource*>();
 }
-void InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& current_write_index_list) {
+StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info) {
+  StrHashMap<uint32_t> current_write_index_list;
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* current_write_index_list, const StrHash resource_id, const ResourceInfo* resource_info) {
     if (resource_info->pingpong) {
       current_write_index_list->insert(resource_id, 0);
     }
   }, &current_write_index_list);
+  return current_write_index_list;
 }
 void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t resource_num, ResourceSet* resource_set) {
   (*resource_set->resource_index)[id] = resource_set->resources->size();
@@ -393,8 +399,7 @@ TEST_CASE("resources") {
   // parse resource info
   const uint32_t primary_width = 1920;
   const uint32_t primary_height = 1080;
-  StrHashMap<ResourceInfo> resource_info;
-  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
+  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
   CHECK_EQ(resource_info.size(), 7);
   CHECK_EQ(resource_info["gbuffer0"_id].creation_type, ResourceCreationType::kRtv);
   CHECK_EQ(resource_info["gbuffer0"_id].flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);

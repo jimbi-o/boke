@@ -418,7 +418,8 @@ struct RenderPass {
   RenderPassInfo* render_pass_info{};
   RenderPassFunc* render_pass_func{};
 };
-auto ParseRenderPassList(const rapidjson::Value& json, StrHashMap<RenderPass>& render_pass_list) {
+auto ParseRenderPassList(const rapidjson::Value& json) {
+  StrHashMap<RenderPass> render_pass_list;
   for (const auto& render_pass_json : json.GetArray()) {
     RenderPass render_pass{};
     render_pass.render_pass_info = ParseRenderPass(render_pass_json["list"], &render_pass.render_pass_len);
@@ -426,6 +427,7 @@ auto ParseRenderPassList(const rapidjson::Value& json, StrHashMap<RenderPass>& r
     GatherRenderPassFunc(render_pass.render_pass_len, render_pass.render_pass_info, render_pass.render_pass_func);
     render_pass_list[GetStrHash(render_pass_json["name"].GetString())] = std::move(render_pass);
   }
+  return render_pass_list;
 }
 struct IterateResourceNameForDebugBufferViewAsset {
   static const int32_t kMaxResourceNum{32};
@@ -699,12 +701,9 @@ TEST_CASE("multiple render pass") {
   auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance);
   auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
   // resource info
-  StrHashMap<ResourceInfo> resource_info;
-  ParseResourceInfo(json["resource"], resource_info);
-  StrHashMap<uint32_t> current_write_index_list;
-  InitWriteIndexList(resource_info, current_write_index_list);
-  StrHashMap<const char*> resource_name;
-  CollectResourceNames(resource_info, resource_name);
+  auto resource_info = ParseResourceInfo(json["resource"]);
+  auto current_write_index_list = InitWriteIndexList(resource_info);
+  auto resource_name = CollectResourceNames(resource_info);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device);
   auto resource_set = CreateResources(resource_info, gpu_memory_allocator);
@@ -763,8 +762,7 @@ TEST_CASE("multiple render pass") {
   // materials
   auto material_set = CreateMaterialSet(json["material"], device);
   // render pass
-  StrHashMap<RenderPass> render_pass_list;
-  ParseRenderPassList(json["render_pass"], render_pass_list);
+  auto render_pass_list = ParseRenderPassList(json["render_pass"]);
   // init imgui
   {
     AddDescriptorHandlesSrv("imgui_font"_id, DXGI_FORMAT_UNKNOWN, nullptr, 1,  device, descriptor_heaps.head_addr, descriptor_heaps.increment_size, descriptor_handles);

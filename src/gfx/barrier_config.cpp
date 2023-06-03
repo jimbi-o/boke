@@ -313,8 +313,7 @@ TEST_CASE("barrier config") {
   };
   StrHashMap<uint32_t> current_write_index_list;
   current_write_index_list["primary"_id] = 0;
-  StrHashMap<ResourceInfo> resource_info;
-  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
+  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
   auto transition_info = InitTransitionInfo(resource_info);
   CHECK_EQ(transition_info->transition_info_index->size(), 6);
   CHECK_UNARY(transition_info->transition_info_index->contains("gbuffer0"_id));

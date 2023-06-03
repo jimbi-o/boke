@@ -252,8 +252,7 @@ TEST_CASE("descriptors") {
   auto dxgi = InitDxgi(gfx_libraries.dxgi_library, AdapterType::kHighPerformance);
   auto device = CreateDevice(gfx_libraries.d3d12_library, dxgi.adapter);
   // parse resource info
-  StrHashMap<ResourceInfo> resource_info;
-  ParseResourceInfo(GetJson("tests/resources.json"), resource_info);
+  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(dxgi.adapter, device);
   auto resource_set = CreateResources(resource_info, gpu_memory_allocator);
