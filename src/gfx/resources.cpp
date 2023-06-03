@@ -294,12 +294,12 @@ void ReleaseResources(ResourceSet* resource_set) {
   resource_set->allocations->~ResizableArray<D3D12MA::Allocation*>();
   resource_set->resources->~ResizableArray<ID3D12Resource*>();
 }
-void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& pingpong_current_write_index) {
-  resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* pingpong_current_write_index, const StrHash resource_id, const ResourceInfo* resource_info) {
+void InitPingpongCurrentWriteIndex(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& current_write_index) {
+  resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* current_write_index, const StrHash resource_id, const ResourceInfo* resource_info) {
     if (resource_info->pingpong) {
-      pingpong_current_write_index->insert(resource_id, 0);
+      current_write_index->insert(resource_id, 0);
     }
-  }, &pingpong_current_write_index);
+  }, &current_write_index);
 }
 void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t resource_num, ResourceSet* resource_set) {
   (*resource_set->resource_index)[id] = resource_set->resources->size();
@@ -308,20 +308,20 @@ void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t res
     SetD3d12Name(resource[i], id, i);
   }
 }
-uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
-  if (!pingpong_current_write_index.contains(id)) {
+uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& current_write_index, const StrHash id) {
+  if (!current_write_index.contains(id)) {
     return 0;
   }
-  return pingpong_current_write_index[id] == 0 ? 1 : 0;
+  return current_write_index[id] == 0 ? 1 : 0;
 }
-uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
-  if (!pingpong_current_write_index.contains(id)) {
+uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& current_write_index, const StrHash id) {
+  if (!current_write_index.contains(id)) {
     return 0;
   }
-  return pingpong_current_write_index[id];
+  return current_write_index[id];
 }
-uint32_t GetPhysicalResourceNum(const StrHashMap<uint32_t>& pingpong_current_write_index, const StrHash id) {
-  if (!pingpong_current_write_index.contains(id)) {
+uint32_t GetPhysicalResourceNum(const StrHashMap<uint32_t>& current_write_index, const StrHash id) {
+  if (!current_write_index.contains(id)) {
     return 1;
   }
   return 2;

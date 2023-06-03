@@ -15,7 +15,7 @@ using namespace boke;
 uint32_t GetShaderVisibleDescriptorNum(const RenderPassInfo& render_pass_info) {
   return render_pass_info.srv_num;
 }
-void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, const uint32_t increment_size, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& dst_handle, const uint32_t dst_handle_num) {
+void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& current_write_index, const uint32_t increment_size, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& dst_handle, const uint32_t dst_handle_num) {
   DEBUG_ASSERT(render_pass_info.srv_num == dst_handle_num, DebugAssert{});
   if (render_pass_info.srv_num == 0) { return; }
   const uint32_t src_descriptor_num_len = 16;
@@ -23,11 +23,11 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
   D3D12_CPU_DESCRIPTOR_HANDLE src_descriptor_handles[src_descriptor_num_len]{};
   uint32_t src_descriptor_num_index = 0;
   {
-    src_descriptor_handles[src_descriptor_num_index].ptr = GetDescriptorHandleSrv(render_pass_info.srv[0], GetPingpongIndexRead(pingpong_current_write_index, render_pass_info.srv[0]), descriptor_handles).ptr;
+    src_descriptor_handles[src_descriptor_num_index].ptr = GetDescriptorHandleSrv(render_pass_info.srv[0], GetPingpongIndexRead(current_write_index, render_pass_info.srv[0]), descriptor_handles).ptr;
     src_descriptor_num[src_descriptor_num_index] = 1;
   }
   for (uint32_t i = 1; i < render_pass_info.srv_num; i++) {
-    const auto handle = GetDescriptorHandleSrv(render_pass_info.srv[i], GetPingpongIndexRead(pingpong_current_write_index, render_pass_info.srv[i]), descriptor_handles);
+    const auto handle = GetDescriptorHandleSrv(render_pass_info.srv[i], GetPingpongIndexRead(current_write_index, render_pass_info.srv[i]), descriptor_handles);
     if (src_descriptor_handles[src_descriptor_num_index].ptr + src_descriptor_num[src_descriptor_num_index] * increment_size == handle.ptr) {
       src_descriptor_num[src_descriptor_num_index]++;
       continue;
@@ -41,7 +41,7 @@ void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_
 }
 } // namespace
 namespace boke {
-D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& pingpong_current_write_index, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num) {
+D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& current_write_index, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num) {
   const auto dst_handle_num = GetShaderVisibleDescriptorNum(render_pass_info);
   if (dst_handle_num == 0) { return {}; }
   if (info.reserved_handle_num + *occupied_handle_num + dst_handle_num > info.total_handle_num) {
@@ -51,7 +51,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(cons
   D3D12_CPU_DESCRIPTOR_HANDLE dst_handle {
     .ptr = info.head_addr_cpu.ptr + offset,
   };
-  CopyDescriptorsToShaderVisibleDescriptor(render_pass_info, descriptor_handles, pingpong_current_write_index, info.increment_size, device, dst_handle, dst_handle_num);
+  CopyDescriptorsToShaderVisibleDescriptor(render_pass_info, descriptor_handles, current_write_index, info.increment_size, device, dst_handle, dst_handle_num);
   *occupied_handle_num += dst_handle_num;
   return D3D12_GPU_DESCRIPTOR_HANDLE {
     .ptr = info.head_addr_gpu.ptr + offset,
