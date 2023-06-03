@@ -37,5 +37,4 @@ void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t res
 uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
 uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
 ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, const uint32_t index);
-uint32_t GetPhysicalResourceNum(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
 }

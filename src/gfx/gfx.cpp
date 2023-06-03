@@ -806,7 +806,7 @@ TEST_CASE("multiple render pass") {
     const auto& current_render_pass = render_pass_list[current_render_pass_name];
     for (uint32_t i = 0; i < current_render_pass.render_pass_len; i++) {
       UpdateTransitionInfo(transition_info);
-      FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, current_write_index_list);
+      FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, resource_info, current_write_index_list);
       ConfigureRenderPassBarriersTextureTransitions(current_render_pass.render_pass_info[i], current_write_index_list, transition_info);
       ProcessBarriers(transition_info, resource_set, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(current_render_pass.render_pass_info[i],
