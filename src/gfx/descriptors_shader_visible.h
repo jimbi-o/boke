@@ -10,5 +10,5 @@ struct ShaderVisibleDescriptorHandleInfo {
 };
 struct RenderPassInfo;
 struct DescriptorHandles;
-D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& current_write_index, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num);
+D3D12_GPU_DESCRIPTOR_HANDLE PrepareRenderPassShaderVisibleDescriptorHandles(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& current_write_index_list, D3d12Device* device, const ShaderVisibleDescriptorHandleInfo& info, uint32_t* occupied_handle_num);
 }

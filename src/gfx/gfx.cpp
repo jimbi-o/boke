@@ -286,7 +286,7 @@ auto ReleaseGfxCore(GfxCoreUnit& core) {
   ReleaseWin32Window(core.window_info);
 }
 struct RenderPassFuncCommonParams {
-  StrHashMap<uint32_t>& current_write_index;
+  StrHashMap<uint32_t>& current_write_index_list;
   ResourceSet* resource_set;
   DescriptorHandles* descriptor_handles;
   MaterialSet* material_set;
@@ -310,13 +310,13 @@ void SetRtvAndDsv(const RenderPassFuncCommonParams& common_params, const RenderP
   const uint32_t max_rtv_num = 8;
   D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num]{};
   for (uint32_t i = 0; i < pass_params.render_pass_info.rtv_num; i++) {
-    rtv_handles[i] = GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[i], GetPingpongIndexWrite(common_params.current_write_index, pass_params.render_pass_info.rtv[i]), common_params.descriptor_handles);
+    rtv_handles[i] = GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[i], GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[i]), common_params.descriptor_handles);
   }
   if (pass_params.render_pass_info.dsv == kEmptyStr) {
     command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, nullptr);
     return;
   }
-  const auto dsv_handle = GetDescriptorHandleDsv(pass_params.render_pass_info.dsv, GetPingpongIndexWrite(common_params.current_write_index, pass_params.render_pass_info.dsv), common_params.descriptor_handles);
+  const auto dsv_handle = GetDescriptorHandleDsv(pass_params.render_pass_info.dsv, GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.dsv), common_params.descriptor_handles);
   command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, &dsv_handle);
 }
 void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
@@ -348,7 +348,7 @@ void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, cons
 void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {}
 void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   RenderImgui(command_list, GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[0],
-                                                   GetPingpongIndexWrite(common_params.current_write_index, pass_params.render_pass_info.rtv[0]),
+                                                   GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[0]),
                                                    common_params.descriptor_handles));
 }
 using RenderPassFunc = void (*)(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*);
@@ -701,8 +701,8 @@ TEST_CASE("multiple render pass") {
   // resource info
   StrHashMap<ResourceInfo> resource_info;
   ParseResourceInfo(json["resource"], resource_info);
-  StrHashMap<uint32_t> current_write_index;
-  InitPingpongCurrentWriteIndex(resource_info, current_write_index);
+  StrHashMap<uint32_t> current_write_index_list;
+  InitWriteIndexList(resource_info, current_write_index_list);
   StrHashMap<const char*> resource_name;
   CollectResourceNames(resource_info, resource_name);
   // resources
@@ -780,7 +780,7 @@ TEST_CASE("multiple render pass") {
   // frame loop
   const uint32_t max_loop_num = json["max_loop_num"].GetUint();
   RenderPassFuncCommonParams render_pass_common_params {
-    .current_write_index = current_write_index,
+    .current_write_index_list = current_write_index_list,
     .resource_set = resource_set,
     .descriptor_handles = descriptor_handles,
     .material_set = material_set,
@@ -795,7 +795,7 @@ TEST_CASE("multiple render pass") {
     WaitForFence(fence_event, fence, fence_signal_val_list[frame_index]);
     // bind current swapchain backbuffer
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
-    current_write_index["swapchain"_id] = swapchain_backbuffer_index;
+    current_write_index_list["swapchain"_id] = swapchain_backbuffer_index;
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
     const auto is_in_debug_buffer_view_mode = (ui_params.debug_view_resource_id != kEmptyStr);
@@ -806,12 +806,12 @@ TEST_CASE("multiple render pass") {
     const auto& current_render_pass = render_pass_list[current_render_pass_name];
     for (uint32_t i = 0; i < current_render_pass.render_pass_len; i++) {
       UpdateTransitionInfo(transition_info);
-      FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, current_write_index);
-      ConfigureRenderPassBarriersTextureTransitions(current_render_pass.render_pass_info[i], current_write_index, transition_info);
+      FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, current_write_index_list);
+      ConfigureRenderPassBarriersTextureTransitions(current_render_pass.render_pass_info[i], current_write_index_list, transition_info);
       ProcessBarriers(transition_info, resource_set, command_list);
       const auto gpu_handle = PrepareRenderPassShaderVisibleDescriptorHandles(current_render_pass.render_pass_info[i],
                                                                               descriptor_handles,
-                                                                              current_write_index,
+                                                                              current_write_index_list,
                                                                               device,
                                                                               shader_visible_descriptor_handle_info,
                                                                               &shader_visible_descriptor_handle_occupied_handle_num);
@@ -843,7 +843,7 @@ TEST_CASE("multiple render pass") {
   ReleaseDescriptorHeaps(descriptor_heaps);
   ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
-  current_write_index.~StrHashMap<uint32_t>();
+  current_write_index_list.~StrHashMap<uint32_t>();
   resource_name.~StrHashMap<const char*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
