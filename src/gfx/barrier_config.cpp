@@ -102,7 +102,7 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const Ba
   uint32_t result_num = 0;
   for (uint32_t i = 0; i < render_pass.srv_num; i++) {
     const auto srv = render_pass.srv[i];
-    if (!resource_info.contains(srv) || !resource_info[srv].pingpong) { continue; }
+    if (auto ptr = resource_info.get(srv); ptr == nullptr || !ptr->pingpong) { continue; }
     bool found_rtv = false;
     for (uint32_t j = 0; j < render_pass.rtv_num; j++) {
       if (srv != render_pass.rtv[j]) { continue; }

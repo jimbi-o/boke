@@ -243,8 +243,8 @@ ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, c
   return (*resource_set->resources)[(*resource_set->resource_index)[id] + index];
 }
 void SetResource(StrHash id, ID3D12Resource* resource, ResourceSet* resource_set) {
-  if (resource_set->resource_index->contains(id)) {
-    (*resource_set->resources)[(*resource_set->resource_index)[id]] = resource;
+  if (auto ptr = resource_set->resource_index->get(id); ptr != nullptr) {
+    (*resource_set->resources)[*ptr] = resource;
     return;
   }
   (*resource_set->resource_index)[id] = resource_set->resource_index->size();

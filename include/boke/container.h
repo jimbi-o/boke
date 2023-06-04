@@ -82,6 +82,8 @@ class StrHashMap final {
   bool contains(const StrHash) const;
   T& operator[](const StrHash);
   const T& operator[](const StrHash) const;
+  T* get(const StrHash);
+  const T* get(const StrHash) const;
   void iterate(SimpleIteratorFunction&&);
   void iterate(ConstSimpleIteratorFunction&&) const;
   template <typename T> void iterate(IteratorFunction<T>&&, T*);
@@ -327,6 +329,19 @@ template <typename T>
 const T& StrHashMap<T>::operator[](const StrHash key) const {
   const auto index = find_slot_index(key);
   return values_[index];
+}
+template <typename T>
+T* StrHashMap<T>::get(const StrHash key) {
+  if (size_ == 0) { return nullptr; }
+  const auto index = find_slot_index(key);
+  if (occupied_flags_[index]) {
+    return &values_[index];
+  }
+  return nullptr;
+}
+template <typename T>
+const T* StrHashMap<T>::get(const StrHash key) const {
+  return const_cast<StrHashMap<T>*>(this)->get(key);
 }
 template <typename T>
 void StrHashMap<T>::iterate(SimpleIteratorFunction&& f) {
