@@ -102,7 +102,7 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const Ba
   uint32_t result_num = 0;
   for (uint32_t i = 0; i < render_pass.srv_num; i++) {
     const auto srv = render_pass.srv[i];
-    if (!resource_info[srv].pingpong) { continue; }
+    if (!resource_info.contains(srv) || !resource_info[srv].pingpong) { continue; }
     bool found_rtv = false;
     for (uint32_t j = 0; j < render_pass.rtv_num; j++) {
       if (srv != render_pass.rtv[j]) { continue; }
@@ -311,10 +311,9 @@ TEST_CASE("barrier config") {
       .present = "swapchain"_id,
     },
   };
-  StrHashMap<uint32_t> current_write_index_list;
-  current_write_index_list["primary"_id] = 0;
   auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
   auto transition_info = InitTransitionInfo(resource_info);
+  auto current_write_index_list = InitWriteIndexList(resource_info);
   CHECK_EQ(transition_info->transition_info_index->size(), 6);
   CHECK_UNARY(transition_info->transition_info_index->contains("gbuffer0"_id));
   CHECK_UNARY(transition_info->transition_info_index->contains("gbuffer1"_id));

@@ -18,6 +18,7 @@ struct ResourceSet {
 };
 } // namespace boke
 namespace {
+const uint32_t kSinglePhysicalResource = ~0U;
 using namespace boke;
 void* GpuMemoryAllocatorAllocate(size_t size, size_t alignment, void*) {
   return boke::Allocate(boke::GetUint32(size), boke::GetUint32(alignment));
@@ -225,7 +226,7 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
       .flags = GetResourceFlags(resource["flags"]),
       .format = GetDxgiFormat(resource["format"].GetString()),
       .size = GetSize2d(resource["size"]),
-      .physical_resource_num = resource["pingpong"].GetBool() ? 2U : 1U,
+      .physical_resource_num = resource["pingpong"].GetBool() ? 2U : 1U, // TODO add to json
       .pingpong = resource["pingpong"].GetBool(),
     };
   }
@@ -301,9 +302,8 @@ void ReleaseResources(ResourceSet* resource_set) {
 StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info) {
   StrHashMap<uint32_t> current_write_index_list;
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* current_write_index_list, const StrHash resource_id, const ResourceInfo* resource_info) {
-    if (resource_info->pingpong) {
-      current_write_index_list->insert(resource_id, 0);
-    }
+    const auto index = resource_info->pingpong ? 0U : kSinglePhysicalResource;
+    current_write_index_list->insert(resource_id, index);
   }, &current_write_index_list);
   return current_write_index_list;
 }
@@ -315,22 +315,14 @@ void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t res
   }
 }
 uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
-  if (!current_write_index_list.contains(id)) {
-    return 0;
-  }
-  return current_write_index_list[id] == 0 ? 1 : 0;
+  const auto index = current_write_index_list[id];
+  if (index == kSinglePhysicalResource) { return 0; }
+  return index == 0 ? 1 : 0;
 }
 uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
-  if (!current_write_index_list.contains(id)) {
-    return 0;
-  }
-  return current_write_index_list[id];
-}
-uint32_t GetPhysicalResourceNum(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
-  if (!current_write_index_list.contains(id)) {
-    return 1;
-  }
-  return 2;
+  const auto index = current_write_index_list[id];
+  if (index == kSinglePhysicalResource) { return 0; }
+  return index;
 }
 } // namespace boke
 #include "doctest/doctest.h"
