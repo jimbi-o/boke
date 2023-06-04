@@ -68,7 +68,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
     .layout = D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_SHADER_RESOURCE
   };
   for (uint32_t i = 0; i < next_render_pass.srv_num; i++) {
-    UpdateNextTransitionInfo(next_render_pass.srv[i], GetPingpongIndexRead(current_write_index_list, next_render_pass.srv[i]), info, transition_info);
+    UpdateNextTransitionInfo(next_render_pass.srv[i], GetResourceLocalIndexRead(current_write_index_list, next_render_pass.srv[i]), info, transition_info);
   }
   // rtv
   info = BarrierTransitionInfoPerResource{
@@ -77,7 +77,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
     .layout = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
   };
   for (uint32_t i = 0; i < next_render_pass.rtv_num; i++) {
-    UpdateNextTransitionInfo(next_render_pass.rtv[i], GetPingpongIndexWrite(current_write_index_list, next_render_pass.rtv[i]), info, transition_info);
+    UpdateNextTransitionInfo(next_render_pass.rtv[i], GetResourceLocalIndexWrite(current_write_index_list, next_render_pass.rtv[i]), info, transition_info);
   }
   // dsv
   if (next_render_pass.dsv != kEmptyStr) {
@@ -86,7 +86,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
       .access = D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE,
       .layout = D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
     };
-    UpdateNextTransitionInfo(next_render_pass.dsv, GetPingpongIndexWrite(current_write_index_list, next_render_pass.dsv), info, transition_info);
+    UpdateNextTransitionInfo(next_render_pass.dsv, GetResourceLocalIndexWrite(current_write_index_list, next_render_pass.dsv), info, transition_info);
   }
   // present
   if (next_render_pass.present != kEmptyStr) {
@@ -95,7 +95,7 @@ auto ConfigureBarriersTextureTransitions(const RenderPassInfo& next_render_pass,
       .access = D3D12_BARRIER_ACCESS_NO_ACCESS,
       .layout = D3D12_BARRIER_LAYOUT_PRESENT,
     };
-    UpdateNextTransitionInfo(next_render_pass.present, GetPingpongIndexWrite(current_write_index_list, next_render_pass.present), info, transition_info);
+    UpdateNextTransitionInfo(next_render_pass.present, GetResourceLocalIndexWrite(current_write_index_list, next_render_pass.present), info, transition_info);
   }
 }
 auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const BarrierTransitionInfo* transition_info, const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<uint32_t>& current_write_index_list, const uint32_t result_len, StrHash* result) {
@@ -114,7 +114,7 @@ auto GetPingPongFlippingResourceList(const RenderPassInfo& render_pass, const Ba
     }
     if (found_rtv) { continue; }
     // looking at write because it's before flip.
-    if (GetCurrentTransitionInfo(srv, GetPingpongIndexWrite(current_write_index_list, srv), transition_info).layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
+    if (GetCurrentTransitionInfo(srv, GetResourceLocalIndexWrite(current_write_index_list, srv), transition_info).layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET) {
       result[result_num] = srv;
       result_num++;
       DEBUG_ASSERT(result_num <= result_len, DebugAssert{});

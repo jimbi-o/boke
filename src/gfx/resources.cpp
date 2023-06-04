@@ -314,12 +314,12 @@ void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t res
     SetD3d12Name(resource[i], id, i);
   }
 }
-uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
+uint32_t GetResourceLocalIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
   const auto index = current_write_index_list[id];
   if (index == kSinglePhysicalResource) { return 0; }
   return index == 0 ? 1 : 0;
 }
-uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
+uint32_t GetResourceLocalIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
   const auto index = current_write_index_list[id];
   if (index == kSinglePhysicalResource) { return 0; }
   return index;

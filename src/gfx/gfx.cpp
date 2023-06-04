@@ -310,13 +310,13 @@ void SetRtvAndDsv(const RenderPassFuncCommonParams& common_params, const RenderP
   const uint32_t max_rtv_num = 8;
   D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[max_rtv_num]{};
   for (uint32_t i = 0; i < pass_params.render_pass_info.rtv_num; i++) {
-    rtv_handles[i] = GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[i], GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[i]), common_params.descriptor_handles);
+    rtv_handles[i] = GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[i], GetResourceLocalIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[i]), common_params.descriptor_handles);
   }
   if (pass_params.render_pass_info.dsv == kEmptyStr) {
     command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, nullptr);
     return;
   }
-  const auto dsv_handle = GetDescriptorHandleDsv(pass_params.render_pass_info.dsv, GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.dsv), common_params.descriptor_handles);
+  const auto dsv_handle = GetDescriptorHandleDsv(pass_params.render_pass_info.dsv, GetResourceLocalIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.dsv), common_params.descriptor_handles);
   command_list->OMSetRenderTargets(pass_params.render_pass_info.rtv_num, rtv_handles, false, &dsv_handle);
 }
 void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
@@ -348,7 +348,7 @@ void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, cons
 void RenderPassNoOp(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*) {}
 void RenderPassImgui(const RenderPassFuncCommonParams& common_params, const RenderPassFuncIndividualParams& pass_params, D3d12CommandList* command_list) {
   RenderImgui(command_list, GetDescriptorHandleRtv(pass_params.render_pass_info.rtv[0],
-                                                   GetPingpongIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[0]),
+                                                   GetResourceLocalIndexWrite(common_params.current_write_index_list, pass_params.render_pass_info.rtv[0]),
                                                    common_params.descriptor_handles));
 }
 using RenderPassFunc = void (*)(const RenderPassFuncCommonParams&, const RenderPassFuncIndividualParams&, D3d12CommandList*);

@@ -34,7 +34,7 @@ void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator);
 ResourceSet* CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator);
 void ReleaseResources(ResourceSet*);
 void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t resource_num, ResourceSet* resource_set);
-uint32_t GetPingpongIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
-uint32_t GetPingpongIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
+uint32_t GetResourceLocalIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
+uint32_t GetResourceLocalIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
 ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, const uint32_t index);
 }
