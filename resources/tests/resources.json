@@ -11,7 +11,8 @@
       "srv"
     ],
     "pingpong": false,
-    "initial_flag": "rtv"
+    "initial_flag": "rtv",
+    "physical_resource_num": 1
   },
   {
     "name": "gbuffer1",
@@ -25,7 +26,8 @@
       "srv"
     ],
     "pingpong": false,
-    "initial_flag": "rtv"
+    "initial_flag": "rtv",
+    "physical_resource_num": 1
   },
   {
     "name": "gbuffer2",
@@ -39,7 +41,8 @@
       "srv"
     ],
     "pingpong": false,
-    "initial_flag": "rtv"
+    "initial_flag": "rtv",
+    "physical_resource_num": 1
   },
   {
     "name": "gbuffer3",
@@ -53,7 +56,8 @@
       "srv"
     ],
     "pingpong": false,
-    "initial_flag": "rtv"
+    "initial_flag": "rtv",
+    "physical_resource_num": 1
   },
   {
     "name": "depth",
@@ -66,7 +70,8 @@
       "dsv"
     ],
     "pingpong": false,
-    "initial_flag": "dsv"
+    "initial_flag": "dsv",
+    "physical_resource_num": 1
   },
   {
     "name": "primary",
@@ -80,7 +85,8 @@
       "srv"
     ],
     "pingpong": true,
-    "initial_flag": "rtv"
+    "initial_flag": "rtv",
+    "physical_resource_num": 2
   },
   {
     "name": "swapchain",
@@ -91,6 +97,7 @@
     ],
     "flags": [],
     "pingpong": false,
-    "initial_flag": "present"
+    "initial_flag": "present",
+    "physical_resource_num": 1
   }
 ]

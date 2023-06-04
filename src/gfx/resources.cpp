@@ -226,7 +226,7 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
       .flags = GetResourceFlags(resource["flags"]),
       .format = GetDxgiFormat(resource["format"].GetString()),
       .size = GetSize2d(resource["size"]),
-      .physical_resource_num = resource["pingpong"].GetBool() ? 2U : 1U, // TODO add to json
+      .physical_resource_num = resource["physical_resource_num"].GetUint(),
       .pingpong = resource["pingpong"].GetBool(),
     };
   }

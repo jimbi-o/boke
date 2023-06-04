@@ -44,6 +44,11 @@ def check_pingpong(render_pass, resource_list):
             if not resource_list[srv]["pingpong"] and srv == rtv:
                 resource_list[srv]["pingpong"] = True
 
+def count_physical_resource_num(resource_list):
+    for buffer in resource_list.values():
+        buffer_num = 2 if buffer["pingpong"] else 1
+        buffer["physical_resource_num"] = buffer_num
+
 def add_srv_to_flags(resource_list):
     # for buffer debug view
     for buffer in resource_list.values():
@@ -56,6 +61,7 @@ def configure_resources(render_pass, resource_options, resource_list):
     process_resource("dsv", render_pass, resource_options, resource_list)
     process_resource("present", render_pass, resource_options, resource_list)
     check_pingpong(render_pass, resource_list)
+    count_physical_resource_num(resource_list)
     add_srv_to_flags(resource_list)
 
 def get_output_buffer_format(render_pass, resource_list):
