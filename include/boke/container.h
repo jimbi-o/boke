@@ -10,6 +10,7 @@ class ResizableArray final {
  public:
   ResizableArray();
   ResizableArray(const uint32_t initial_size, const uint32_t initial_capacity);
+  ResizableArray(const uint32_t initial_capacity);
   ResizableArray(ResizableArray&&);
   ResizableArray& operator=(ResizableArray&&);
   ~ResizableArray();
@@ -115,6 +116,14 @@ ResizableArray<T>::ResizableArray(const uint32_t initial_size, const uint32_t in
     , head_(nullptr)
 {
   change_capacity(initial_size > initial_capacity ? initial_size: initial_capacity);
+}
+template <typename T>
+ResizableArray<T>::ResizableArray(const uint32_t initial_capacity)
+    : size_()
+    , capacity_(0)
+    , head_(nullptr)
+{
+  change_capacity(initial_capacity);
 }
 template <typename T>
 ResizableArray<T>::~ResizableArray() {

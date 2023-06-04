@@ -217,7 +217,7 @@ Size2d GetSize2d(const rapidjson::Value& array) {
   };
 }
 StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
-  StrHashMap<ResourceInfo> resource_info;
+  StrHashMap<ResourceInfo> resource_info(resources.Size());
   for (const auto& resource : resources.GetArray()) {
     const auto name = resource["name"].GetString();
     const auto hash = GetStrHash(name);
@@ -233,7 +233,7 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
   return resource_info;
 }
 StrHashMap<const char*> CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info) {
-  StrHashMap<const char*> resource_name;
+  StrHashMap<const char*> resource_name(resource_info.size());
   resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo*) {
     resource_name->insert(resource_id, GetStr(resource_id));},
     &resource_name);
@@ -274,13 +274,10 @@ void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator) {
 }
 ResourceSet* CreateResources(const StrHashMap<ResourceInfo>& resource_info, D3D12MA::Allocator* allocator) {
   auto resource_set = New<ResourceSet>();
-  resource_set->resource_index = New<StrHashMap<uint32_t>>();
-  resource_set->allocations = New<ResizableArray<D3D12MA::Allocation*>>();
-  resource_set->resources = New<ResizableArray<ID3D12Resource*>>();
-  resource_set->resource_index->reserve(resource_info.size());
   const uint32_t physical_resource_num = GetTotalPhysicalResourceNum(resource_info);
-  resource_set->allocations->reserve(physical_resource_num);
-  resource_set->resources->reserve(physical_resource_num);
+  resource_set->resource_index = New<StrHashMap<uint32_t>>(resource_info.size());
+  resource_set->allocations = New<ResizableArray<D3D12MA::Allocation*>>(physical_resource_num);
+  resource_set->resources = New<ResizableArray<ID3D12Resource*>>(physical_resource_num);
   ResourceSetCreationAsseet asset{
     .allocator = allocator,
     .resource_index = resource_set->resource_index,
@@ -298,9 +295,12 @@ void ReleaseResources(ResourceSet* resource_set) {
   resource_set->resource_index->~StrHashMap<uint32_t>();
   resource_set->allocations->~ResizableArray<D3D12MA::Allocation*>();
   resource_set->resources->~ResizableArray<ID3D12Resource*>();
+  Deallocate(resource_set->resource_index);
+  Deallocate(resource_set->allocations);
+  Deallocate(resource_set->resources);
 }
 StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info) {
-  StrHashMap<uint32_t> current_write_index_list;
+  StrHashMap<uint32_t> current_write_index_list(resource_info.size());
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* current_write_index_list, const StrHash resource_id, const ResourceInfo* resource_info) {
     const auto index = resource_info->pingpong ? 0U : kSinglePhysicalResource;
     current_write_index_list->insert(resource_id, index);
