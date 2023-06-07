@@ -431,26 +431,22 @@ auto ParseRenderPassList(const rapidjson::Value& json) {
 }
 struct FillDebugBufferViewParamsAsset {
   static const uint32_t kMaxBufferNum = 64;
-  const StrHashMap<const char*>& resource_name;
   int32_t buffer_num{0};
   const char* buffer_name_list[kMaxBufferNum];
   StrHash buffer_id[kMaxBufferNum];
-  uint32_t buffer_local_index[kMaxBufferNum];
 };
-void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const char* const * resource_name) {
+  if (resource_id == "swapchain"_id) { return; }
   if (resource_id == "debug_buffer_view"_id) { return; }
-  for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
-    if (asset->buffer_num >= FillDebugBufferViewParamsAsset::kMaxBufferNum) {
-      spdlog::warn("FillDebugBufferViewParamsAsset buffer_num({}) exceeds kMaxBufferNum({})", asset->buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
-      return;
-    }
-    asset->buffer_name_list[asset->buffer_num] = asset->resource_name[resource_id];
-    asset->buffer_id[asset->buffer_num] = resource_id;
-    asset->buffer_local_index[asset->buffer_num] = i;
-    asset->buffer_num++;
+  if (asset->buffer_num >= FillDebugBufferViewParamsAsset::kMaxBufferNum) {
+    spdlog::warn("FillDebugBufferViewParamsAsset buffer_num({}) exceeds kMaxBufferNum({})", asset->buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
+    return;
   }
+  asset->buffer_name_list[asset->buffer_num] = *resource_name;
+  asset->buffer_id[asset->buffer_num] = resource_id;
+  asset->buffer_num++;
 }
-void SortBufferNames(const char** buffer_name_list, StrHash* resource_strhash_list, uint32_t* resource_local_index, const uint32_t buffer_num) {
+void SortBufferNames(const char** buffer_name_list, StrHash* resource_strhash_list, const uint32_t buffer_num) {
   uint32_t indices[FillDebugBufferViewParamsAsset::kMaxBufferNum]{};
   if (buffer_num > FillDebugBufferViewParamsAsset::kMaxBufferNum) {
     spdlog::warn("SortBufferNames buffer_num too large. {} > {}", buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
@@ -458,42 +454,32 @@ void SortBufferNames(const char** buffer_name_list, StrHash* resource_strhash_li
   }
   std::iota(indices, indices + buffer_num, 0);
   std::sort(indices, indices + buffer_num, [=](const uint32_t i, const uint32_t j) {
-    const auto cmp = std::strcmp(buffer_name_list[i], buffer_name_list[j]);
-    if (cmp != 0) { return cmp < 0; }
-    return resource_local_index[i] < resource_local_index[j];
+    return std::strcmp(buffer_name_list[i], buffer_name_list[j]) < 0;
   });
   const char* buffer_name_list_copy[FillDebugBufferViewParamsAsset::kMaxBufferNum];
   StrHash resource_strhash_list_copy[FillDebugBufferViewParamsAsset::kMaxBufferNum];
-  uint32_t resource_local_index_copy[FillDebugBufferViewParamsAsset::kMaxBufferNum];
   for (uint32_t i = 0; i < buffer_num; i++) {
     buffer_name_list_copy[i] = buffer_name_list[i];
     resource_strhash_list_copy[i] = resource_strhash_list[i];
-    resource_local_index_copy[i] = resource_local_index[i];
   }
   for (uint32_t i = 0; i < buffer_num; i++) {
     buffer_name_list[i] = buffer_name_list_copy[indices[i]];
     resource_strhash_list[i] = resource_strhash_list_copy[indices[i]];
-    resource_local_index[i] = resource_local_index_copy[indices[i]];
   }
 }
 struct DebugBufferViewParams {
   StrHash resource_id;
-  uint32_t resource_local_index;
 };
-auto ShowDebugBufferSelector(const StrHashMap<ResourceInfo>& resource_info, const StrHashMap<const char*>& resource_name, StrHash* resource_id, uint32_t* resource_local_index) {
-  FillDebugBufferViewParamsAsset asset {
-    .resource_name = resource_name,
-  };
+auto ShowDebugBufferSelector(const StrHashMap<const char*>& resource_name, StrHash* resource_id) {
+  FillDebugBufferViewParamsAsset asset {};
   asset.buffer_name_list[0] = "(default)";
   asset.buffer_id[0] = kEmptyStr;
-  asset.buffer_local_index[0] = 0;
   asset.buffer_num = 1;
-  resource_info.iterate<FillDebugBufferViewParamsAsset>(FillDebugBufferViewParams, &asset);
-  SortBufferNames(&(asset.buffer_name_list[1]), &asset.buffer_id[1], &asset.buffer_local_index[1], asset.buffer_num - 1);
+  resource_name.iterate<FillDebugBufferViewParamsAsset>(FillDebugBufferViewParams, &asset);
+  SortBufferNames(&(asset.buffer_name_list[1]), &asset.buffer_id[1], asset.buffer_num - 1);
   int32_t selected_buffer_index = 0;
   for (int32_t i = 1; i < asset.buffer_num; i++) {
     if (asset.buffer_id[i] != *resource_id) { continue; }
-    if (asset.buffer_local_index[i] != *resource_local_index) { continue; }
     selected_buffer_index = i;
     break;
   }
@@ -504,7 +490,6 @@ auto ShowDebugBufferSelector(const StrHashMap<ResourceInfo>& resource_info, cons
       if (ImGui::Selectable(asset.buffer_name_list[i], is_selected)) {
         selected_buffer_index = i;
         *resource_id = asset.buffer_id[i];
-        *resource_local_index = asset.buffer_local_index[i];
       }
       if (is_selected) {
         ImGui::SetItemDefaultFocus();
@@ -515,15 +500,13 @@ auto ShowDebugBufferSelector(const StrHashMap<ResourceInfo>& resource_info, cons
   }
 }
 struct DataSetForShowGuiFunc {
-  const StrHashMap<ResourceInfo>& resource_info;
   const StrHashMap<const char*>& resource_name;
 };
 struct GuiParam {
   StrHash debug_view_buffer_resource_id;
-  uint32_t debug_view_buffer_resource_local_index;
 };
 void ShowGui(const DataSetForShowGuiFunc& data, GuiParam& param) {
-  ShowDebugBufferSelector(data.resource_info, data.resource_name, &param.debug_view_buffer_resource_id, &param.debug_view_buffer_resource_local_index);
+  ShowDebugBufferSelector(data.resource_name, &param.debug_view_buffer_resource_id);
 }
 } // namespace
 #include "doctest/doctest.h"
@@ -800,7 +783,6 @@ TEST_CASE("multiple render pass") {
     shader_visible_descriptor_handle_info.reserved_handle_num++;
   }
   DataSetForShowGuiFunc data_set_for_gui{
-    .resource_info = resource_info,
     .resource_name = resource_name,
   };
   GuiParam gui_params{};
@@ -823,14 +805,14 @@ TEST_CASE("multiple render pass") {
     // bind current swapchain backbuffer
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     current_write_index_list["swapchain"_id] = swapchain_backbuffer_index;
+    // process debug buffer view pass
+    const auto current_render_pass_name = (gui_params.debug_view_buffer_resource_id != kEmptyStr) ? "debug_buffer_view"_id : "default"_id;
+    const auto& current_render_pass = render_pass_list[current_render_pass_name];
+    if (current_render_pass_name == "debug_buffer_view"_id) {
+      current_render_pass.render_pass_info[0].srv[0] = gui_params.debug_view_buffer_resource_id;
+    }
     // record commands
     StartCommandListRecording(command_list, command_allocator[frame_index], 1, &shader_visible_descriptor_heap);
-    const auto is_in_debug_buffer_view_mode = (gui_params.debug_view_buffer_resource_id != kEmptyStr);
-    if (is_in_debug_buffer_view_mode) {
-      // TODO set srv for debug pass
-    }
-    const auto current_render_pass_name = is_in_debug_buffer_view_mode ? "debug_buffer_view"_id : "default"_id;
-    const auto& current_render_pass = render_pass_list[current_render_pass_name];
     for (uint32_t i = 0; i < current_render_pass.render_pass_len; i++) {
       UpdateTransitionInfo(transition_info);
       FlipPingPongIndex(current_render_pass.render_pass_info[i], transition_info, resource_info, current_write_index_list);
