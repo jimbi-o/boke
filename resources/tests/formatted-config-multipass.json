@@ -20,7 +20,7 @@
                     "name": "gbuffer",
                     "queue": "direct",
                     "type": "geometry",
-                    "material": "gbuffer_c822226850ed2d03",
+                    "material": "gbuffer_4c84b5a599b95f29",
                     "rtv": [
                         "gbuffer0",
                         "gbuffer1",
@@ -33,7 +33,7 @@
                     "name": "lighting",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "lighting_927ce7263dc8c7cf",
+                    "material": "lighting_f103460fddb0a614",
                     "srv": [
                         "gbuffer0",
                         "gbuffer1",
@@ -48,7 +48,7 @@
                     "name": "tonemap",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "tonemap_927ce7263dc8c7cf",
+                    "material": "tonemap_f103460fddb0a614",
                     "srv": [
                         "primary"
                     ],
@@ -60,7 +60,7 @@
                     "name": "oetf",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "oetf_927ce7263dc8c7cf",
+                    "material": "oetf_f103460fddb0a614",
                     "srv": [
                         "primary"
                     ],
@@ -93,7 +93,7 @@
                     "name": "debug_buffer_view",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "copy-texture_927ce7263dc8c7cf",
+                    "material": "copy-texture_f103460fddb0a614",
                     "srv": [
                         "debug_buffer_view"
                     ],
@@ -223,7 +223,7 @@
             ],
             "pingpong": false,
             "initial_flag": "present",
-            "physical_resource_num": 1
+            "physical_resource_num": 0
         },
         {
             "name": "debug_buffer_view",
@@ -237,7 +237,7 @@
             ],
             "pingpong": false,
             "initial_flag": "srv",
-            "physical_resource_num": 1
+            "physical_resource_num": 0
         }
     ],
     "material": [
@@ -253,7 +253,7 @@
                     "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
                 }
             ],
-            "name": "gbuffer_c822226850ed2d03",
+            "name": "gbuffer_4c84b5a599b95f29",
             "rtv": [
                 "R8G8B8A8_UNORM",
                 "R8G8B8A8_UNORM",
@@ -274,7 +274,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "lighting_927ce7263dc8c7cf",
+            "name": "lighting_f103460fddb0a614",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -291,7 +291,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "tonemap_927ce7263dc8c7cf",
+            "name": "tonemap_f103460fddb0a614",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -308,7 +308,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "oetf_927ce7263dc8c7cf",
+            "name": "oetf_f103460fddb0a614",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]
@@ -325,7 +325,7 @@
                     "filename": "shaders/bin/copy_srv_pse88e8bf2ccc351257d5bd7f0bbb1c3d9.cso"
                 }
             ],
-            "name": "copy-texture_927ce7263dc8c7cf",
+            "name": "copy-texture_f103460fddb0a614",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]

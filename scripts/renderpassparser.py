@@ -46,7 +46,11 @@ def check_pingpong(render_pass, resource_list):
 
 def count_physical_resource_num(resource_list):
     for buffer in resource_list.values():
-        buffer_num = 2 if buffer["pingpong"] else 1
+        buffer_num = 1
+        if buffer["pingpong"]:
+            buffer_num = 2
+        if len(buffer["flags"]) == 0 or len(buffer["flags"]) == 1 and buffer["flags"][0] == "srv":
+            buffer_num = 0
         buffer["physical_resource_num"] = buffer_num
 
 def add_srv_to_flags(resource_list):
