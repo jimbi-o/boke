@@ -438,6 +438,7 @@ struct FillDebugBufferViewParamsAsset {
   uint32_t buffer_local_index[kMaxBufferNum];
 };
 void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+  if (resource_id == "debug_buffer_view"_id) { return; }
   for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
     if (asset->buffer_num >= FillDebugBufferViewParamsAsset::kMaxBufferNum) {
       spdlog::warn("FillDebugBufferViewParamsAsset buffer_num({}) exceeds kMaxBufferNum({})", asset->buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);

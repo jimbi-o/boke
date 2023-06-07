@@ -104,6 +104,7 @@ struct ResourceSetCreationAsseet {
   ResizableArray<ID3D12Resource*>* resources;
 };
 void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource_id, const ResourceInfo* resource_info) {
+  if (resource_info->physical_resource_num == 0) { return; }
   D3D12MA::Allocation* allocation[2];
   switch (resource_info->creation_type) {
     case ResourceCreationType::kRtv: {
@@ -118,6 +119,10 @@ void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource
       break;
     }
     case ResourceCreationType::kNone: {
+      return;
+    }
+    default: {
+      DEBUG_ASSERT(false, DebugAssert{});
       return;
     }
   }
