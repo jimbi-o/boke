@@ -237,13 +237,6 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
   }
   return resource_info;
 }
-StrHashMap<const char*> CollectResourceNames(const StrHashMap<ResourceInfo>& resource_info) {
-  StrHashMap<const char*> resource_name(resource_info.size());
-  resource_info.iterate<StrHashMap<const char*>>([](StrHashMap<const char*>* resource_name, const StrHash resource_id, const ResourceInfo*) {
-    resource_name->insert(resource_id, GetStr(resource_id));},
-    &resource_name);
-  return resource_name;
-}
 ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, const uint32_t index) {
   return (*resource_set->resources)[(*resource_set->resource_index)[id] + index];
 }

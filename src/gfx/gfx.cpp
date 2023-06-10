@@ -430,64 +430,52 @@ auto ParseRenderPassList(const rapidjson::Value& json) {
   return render_pass_list;
 }
 struct FillDebugBufferViewParamsAsset {
-  static const uint32_t kMaxBufferNum = 64;
+  static const uint32_t kMaxBufferNum = 256;
   int32_t buffer_num{0};
-  const char* buffer_name_list[kMaxBufferNum];
   StrHash buffer_id[kMaxBufferNum];
 };
-void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const char* const * resource_name) {
+void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const ResourceInfo* const) {
   if (resource_id == "swapchain"_id) { return; }
   if (resource_id == "debug_buffer_view"_id) { return; }
   if (asset->buffer_num >= FillDebugBufferViewParamsAsset::kMaxBufferNum) {
     spdlog::warn("FillDebugBufferViewParamsAsset buffer_num({}) exceeds kMaxBufferNum({})", asset->buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
     return;
   }
-  asset->buffer_name_list[asset->buffer_num] = *resource_name;
   asset->buffer_id[asset->buffer_num] = resource_id;
   asset->buffer_num++;
 }
-void SortBufferNames(const char** buffer_name_list, StrHash* resource_strhash_list, const uint32_t buffer_num) {
-  uint32_t indices[FillDebugBufferViewParamsAsset::kMaxBufferNum]{};
-  if (buffer_num > FillDebugBufferViewParamsAsset::kMaxBufferNum) {
-    spdlog::warn("SortBufferNames buffer_num too large. {} > {}", buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
-    return;
-  }
-  std::iota(indices, indices + buffer_num, 0);
-  std::sort(indices, indices + buffer_num, [=](const uint32_t i, const uint32_t j) {
-    return std::strcmp(buffer_name_list[i], buffer_name_list[j]) < 0;
-  });
-  const char* buffer_name_list_copy[FillDebugBufferViewParamsAsset::kMaxBufferNum];
-  StrHash resource_strhash_list_copy[FillDebugBufferViewParamsAsset::kMaxBufferNum];
-  for (uint32_t i = 0; i < buffer_num; i++) {
-    buffer_name_list_copy[i] = buffer_name_list[i];
-    resource_strhash_list_copy[i] = resource_strhash_list[i];
-  }
-  for (uint32_t i = 0; i < buffer_num; i++) {
-    buffer_name_list[i] = buffer_name_list_copy[indices[i]];
-    resource_strhash_list[i] = resource_strhash_list_copy[indices[i]];
+void SortBufferNames(StrHash* buffer_list, const uint32_t buffer_num) {
+  // insertion sort
+  for (uint32_t i = 1; i < buffer_num; i++) {
+    const auto resource_id = buffer_list[i];
+    auto j = i - 1;
+    while (j != 0 && std::strcmp(GetStr(resource_id), GetStr(buffer_list[j])) < 0) {
+      buffer_list[j + 1] = buffer_list[j];
+      j--;
+    }
+    buffer_list[j + 1] = resource_id;
   }
 }
 struct DebugBufferViewParams {
   StrHash resource_id;
 };
-auto ShowDebugBufferSelector(const StrHashMap<const char*>& resource_name, StrHash* resource_id) {
+auto ShowDebugBufferSelector(const StrHashMap<ResourceInfo>& resource_info, StrHash* resource_id) {
   FillDebugBufferViewParamsAsset asset {};
-  asset.buffer_name_list[0] = "(default)";
   asset.buffer_id[0] = kEmptyStr;
   asset.buffer_num = 1;
-  resource_name.iterate<FillDebugBufferViewParamsAsset>(FillDebugBufferViewParams, &asset);
-  SortBufferNames(&(asset.buffer_name_list[1]), &asset.buffer_id[1], asset.buffer_num - 1);
+  resource_info.iterate<FillDebugBufferViewParamsAsset>(FillDebugBufferViewParams, &asset);
+  SortBufferNames(&asset.buffer_id[1], asset.buffer_num - 1);
   int32_t selected_buffer_index = 0;
   for (int32_t i = 1; i < asset.buffer_num; i++) {
     if (asset.buffer_id[i] != *resource_id) { continue; }
     selected_buffer_index = i;
     break;
   }
-  if (ImGui::BeginCombo("view buffer name", asset.buffer_name_list[selected_buffer_index], ImGuiComboFlags_PopupAlignLeft)) {
+  if (ImGui::BeginCombo("view buffer name", (selected_buffer_index == 0) ? "(default)" : GetStr(asset.buffer_id[selected_buffer_index]), ImGuiComboFlags_PopupAlignLeft)) {
     for (int32_t i = 0; i < asset.buffer_num; i++) {
-      ImGui::PushID(&asset.buffer_name_list[i]);
+      ImGui::PushID(&asset.buffer_id[i]);
       const bool is_selected = (i == selected_buffer_index);
-      if (ImGui::Selectable(asset.buffer_name_list[i], is_selected)) {
+      if (ImGui::Selectable((i == 0) ? "(default)" : GetStr(asset.buffer_id[i]), is_selected)) {
         selected_buffer_index = i;
         *resource_id = asset.buffer_id[i];
       }
@@ -500,13 +488,13 @@ auto ShowDebugBufferSelector(const StrHashMap<const char*>& resource_name, StrHa
   }
 }
 struct DataSetForShowGuiFunc {
-  const StrHashMap<const char*>& resource_name;
+  const StrHashMap<ResourceInfo>& resource_info;
 };
 struct GuiParam {
   StrHash debug_view_buffer_resource_id;
 };
 void ShowGui(const DataSetForShowGuiFunc& data, GuiParam& param) {
-  ShowDebugBufferSelector(data.resource_name, &param.debug_view_buffer_resource_id);
+  ShowDebugBufferSelector(data.resource_info, &param.debug_view_buffer_resource_id);
 }
 } // namespace
 #include "doctest/doctest.h"
@@ -711,7 +699,6 @@ TEST_CASE("multiple render pass") {
   // resource info
   auto resource_info = ParseResourceInfo(json["resource"]);
   auto current_write_index_list = InitWriteIndexList(resource_info);
-  auto resource_name = CollectResourceNames(resource_info);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device);
   auto resource_set = CreateResources(resource_info, gpu_memory_allocator);
@@ -783,7 +770,7 @@ TEST_CASE("multiple render pass") {
     shader_visible_descriptor_handle_info.reserved_handle_num++;
   }
   DataSetForShowGuiFunc data_set_for_gui{
-    .resource_name = resource_name,
+    .resource_info = resource_info,
   };
   GuiParam gui_params{};
   // frame loop
@@ -853,7 +840,6 @@ TEST_CASE("multiple render pass") {
   ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   current_write_index_list.~StrHashMap<uint32_t>();
-  resource_name.~StrHashMap<const char*>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   ReleaseGfxCore(core);
