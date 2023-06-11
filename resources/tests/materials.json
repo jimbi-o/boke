@@ -12,7 +12,7 @@
         "name": "default",
         "target": "rootsig_1_1",
         "file": "test/rootsig.hlsl",
-        "define": "ROOTSIG_EMPTY"
+        "define": "ROOTSIG_CBV"
       },
       "shaders": [
         {

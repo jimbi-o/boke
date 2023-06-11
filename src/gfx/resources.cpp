@@ -143,6 +143,10 @@ auto GetCreationType(const char* const flag) {
   if (strcmp(flag, "present") == 0) {
     return ResourceCreationType::kNone;
   }
+  if (strcmp(flag, "cbv") == 0) {
+    // TODO
+    return ResourceCreationType::kNone;
+  }
   if (strcmp(flag, "srv") == 0) {
     return ResourceCreationType::kNone;
   }
@@ -211,6 +215,9 @@ DXGI_FORMAT GetDxgiFormat(const char* format) {
   }
   if (strcmp(format, "X24_TYPELESS_G8_UINT") == 0) {
     return DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+  }
+  if (strcmp(format, "UNKNOWN") == 0) {
+    return DXGI_FORMAT_UNKNOWN;
   }
   DEBUG_ASSERT(false, DebugAssert{});
   return DXGI_FORMAT_R8G8B8A8_UNORM;

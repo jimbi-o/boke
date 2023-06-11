@@ -432,9 +432,10 @@ struct FillDebugBufferViewParamsAsset {
   int32_t buffer_num{0};
   StrHash buffer_id[kMaxBufferNum];
 };
-void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const ResourceInfo* const) {
+void FillDebugBufferViewParams(FillDebugBufferViewParamsAsset* asset, const StrHash resource_id, const ResourceInfo* const resource_info) {
   if (resource_id == "swapchain"_id) { return; }
   if (resource_id == "debug_buffer_view"_id) { return; }
+  if (resource_info->format == DXGI_FORMAT_UNKNOWN) { return; }
   if (asset->buffer_num >= FillDebugBufferViewParamsAsset::kMaxBufferNum) {
     spdlog::warn("FillDebugBufferViewParamsAsset buffer_num({}) exceeds kMaxBufferNum({})", asset->buffer_num, FillDebugBufferViewParamsAsset::kMaxBufferNum);
     return;
@@ -447,7 +448,7 @@ void SortBufferNames(StrHash* buffer_list, const uint32_t buffer_num) {
   for (uint32_t i = 1; i < buffer_num; i++) {
     const auto resource_id = buffer_list[i];
     auto j = i - 1;
-    while (j != 0 && std::strcmp(GetStr(resource_id), GetStr(buffer_list[j])) < 0) {
+    while (j < buffer_num && std::strcmp(GetStr(resource_id), GetStr(buffer_list[j])) < 0) {
       buffer_list[j + 1] = buffer_list[j];
       j--;
     }
@@ -790,6 +791,8 @@ TEST_CASE("multiple render pass") {
     // bind current swapchain backbuffer
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     current_write_index_list["swapchain"_id] = swapchain_backbuffer_index;
+    // update cbuffers
+    // TODO
     // process debug buffer view pass
     const auto current_render_pass_name = (gui_params.debug_view_buffer_resource_id != kEmptyStr) ? "debug_buffer_view"_id : "default"_id;
     const auto& current_render_pass = render_pass_list[current_render_pass_name];

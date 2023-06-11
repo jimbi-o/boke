@@ -8,7 +8,7 @@
         ],
         "format": "R8G8B8A8_UNORM"
     },
-    "max_loop_num": 15,
+    "max_loop_num": 15000,
     "descriptor_handles": {
         "shader_visible_buffer_num": 1024
     },
@@ -20,7 +20,7 @@
                     "name": "gbuffer",
                     "queue": "direct",
                     "type": "geometry",
-                    "material": "gbuffer_bc93dc012156f6d0",
+                    "material": "gbuffer_35e323e9b40030f",
                     "cbv": [
                         "camera"
                     ],
@@ -36,7 +36,7 @@
                     "name": "lighting",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "lighting_bf444fcef7b097a6",
+                    "material": "lighting_c927c755650af366",
                     "srv": [
                         "gbuffer0",
                         "gbuffer1",
@@ -51,7 +51,7 @@
                     "name": "tonemap",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "tonemap_bf444fcef7b097a6",
+                    "material": "tonemap_c927c755650af366",
                     "srv": [
                         "primary"
                     ],
@@ -63,7 +63,7 @@
                     "name": "oetf",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "oetf_bf444fcef7b097a6",
+                    "material": "oetf_c927c755650af366",
                     "srv": [
                         "primary"
                     ],
@@ -96,7 +96,7 @@
                     "name": "debug_buffer_view",
                     "queue": "direct",
                     "type": "postprocess",
-                    "material": "copy-texture_bf444fcef7b097a6",
+                    "material": "copy-texture_c927c755650af366",
                     "srv": [
                         "debug_buffer_view"
                     ],
@@ -186,8 +186,11 @@
         },
         {
             "name": "camera",
-            "format": "unknown",
-            "size": 0,
+            "format": "UNKNOWN",
+            "size": [
+                0,
+                1
+            ],
             "flags": [
                 "cbv"
             ],
@@ -256,7 +259,7 @@
     ],
     "material": [
         {
-            "rootsig": "shaders/bin/test_rootsigROOTSIG_EMPTY.rs",
+            "rootsig": "shaders/bin/test_rootsigROOTSIG_CBV.rs",
             "shader_list": [
                 {
                     "target": "ms",
@@ -267,7 +270,7 @@
                     "filename": "shaders/bin/debug_color_4rtv_ps74b0dbfb150c06f1e42da329d7e7976f.cso"
                 }
             ],
-            "name": "gbuffer_bc93dc012156f6d0",
+            "name": "gbuffer_35e323e9b40030f",
             "rtv": [
                 "R8G8B8A8_UNORM",
                 "R8G8B8A8_UNORM",
@@ -288,7 +291,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "lighting_bf444fcef7b097a6",
+            "name": "lighting_c927c755650af366",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -305,7 +308,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "tonemap_bf444fcef7b097a6",
+            "name": "tonemap_c927c755650af366",
             "rtv": [
                 "R16G16B16A16_FLOAT"
             ]
@@ -322,7 +325,7 @@
                     "filename": "shaders/bin/debug_color_ps5e9f0b250bfbfe9013ff4b86c386db9b.cso"
                 }
             ],
-            "name": "oetf_bf444fcef7b097a6",
+            "name": "oetf_c927c755650af366",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]
@@ -339,7 +342,7 @@
                     "filename": "shaders/bin/copy_srv_pse88e8bf2ccc351257d5bd7f0bbb1c3d9.cso"
                 }
             ],
-            "name": "copy-texture_bf444fcef7b097a6",
+            "name": "copy-texture_c927c755650af366",
             "rtv": [
                 "R8G8B8A8_UNORM"
             ]

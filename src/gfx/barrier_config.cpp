@@ -29,8 +29,8 @@ using namespace boke;
 const uint32_t kInvalidIndex = ~0U;
 auto FlipPingPongIndexImpl(const uint32_t list_len, const StrHash* flip_list, StrHashMap<uint32_t>& current_write_index_list) {
   for (uint32_t i = 0; i < list_len; i++) {
-    const auto current_index = current_write_index_list[flip_list[i]];
-    current_write_index_list[flip_list[i]] = (current_index == 0) ? 1 : 0;
+    const auto& resource_id = flip_list[i];
+    current_write_index_list[resource_id] = GetResourceLocalIndexRead(current_write_index_list, resource_id);
   }
 }
 auto IsSame(const BarrierTransitionInfoPerResource& a, const BarrierTransitionInfoPerResource& b) {

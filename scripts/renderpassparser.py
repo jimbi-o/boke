@@ -8,6 +8,8 @@ def register_resource(buffer_name, resource_options):
     data["name"] = buffer_name
     data["format"] = resource_options[buffer_name]["format"] if buffer_name in resource_options and "format" in resource_options[buffer_name] else resource_options["default_format"]
     data["size"] = resource_options[buffer_name]["size"] if buffer_name in resource_options and "size" in resource_options[buffer_name] else resource_options["default_size"]
+    if not isinstance(data["size"], list):
+        data["size"] = [data["size"], 1]
     data["flags"] = []
     data["pingpong"] = False
     data["physical_resource_num"] = resource_options[buffer_name]["physical_resource_num"] if buffer_name in resource_options and "physical_resource_num" in resource_options[buffer_name] else 1
@@ -20,7 +22,7 @@ def process_single_resource(buffer_name, buffer_type, resource_options, resource
         if buffer_name == "swapchain":
             resource_list[buffer_name]["initial_flag"] = "present"
         if buffer_type == "cbv":
-            resource_list[buffer_name]["format"] = "unknown"
+            resource_list[buffer_name]["format"] = "UNKNOWN"
     if not buffer_type in resource_list[buffer_name]["flags"]:
         if buffer_name != "swapchain":
             resource_list[buffer_name]["flags"].append(buffer_type)
