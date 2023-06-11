@@ -10,6 +10,7 @@ def register_resource(buffer_name, resource_options):
     data["size"] = resource_options[buffer_name]["size"] if buffer_name in resource_options and "size" in resource_options[buffer_name] else resource_options["default_size"]
     data["flags"] = []
     data["pingpong"] = False
+    data["physical_resource_num"] = resource_options[buffer_name]["physical_resource_num"] if buffer_name in resource_options and "physical_resource_num" in resource_options[buffer_name] else 1
     return data
 
 def process_single_resource(buffer_name, buffer_type, resource_options, resource_list):
@@ -18,6 +19,8 @@ def process_single_resource(buffer_name, buffer_type, resource_options, resource
         resource_list[buffer_name]["initial_flag"] = buffer_type
         if buffer_name == "swapchain":
             resource_list[buffer_name]["initial_flag"] = "present"
+        if buffer_type == "cbv":
+            resource_list[buffer_name]["format"] = "unknown"
     if not buffer_type in resource_list[buffer_name]["flags"]:
         if buffer_name != "swapchain":
             resource_list[buffer_name]["flags"].append(buffer_type)
@@ -46,7 +49,7 @@ def check_pingpong(render_pass, resource_list):
 
 def count_physical_resource_num(resource_list):
     for buffer in resource_list.values():
-        buffer_num = 1
+        buffer_num = buffer["physical_resource_num"]
         if buffer["pingpong"]:
             buffer_num = 2
         if len(buffer["flags"]) == 0 or len(buffer["flags"]) == 1 and buffer["flags"][0] == "srv":
@@ -56,12 +59,13 @@ def count_physical_resource_num(resource_list):
 def add_srv_to_flags(resource_list):
     # for buffer debug view
     for buffer in resource_list.values():
-        if not buffer["name"] == "present" and "srv" not in buffer["flags"]:
+        if not buffer["name"] == "present" and "cbv" not in buffer["flags"] and "srv" not in buffer["flags"]:
             buffer["flags"].append("srv")
 
 def configure_resources(render_pass, resource_options, resource_list):
     iterate_resource("rtv", render_pass, resource_options, resource_list)
     iterate_resource("srv", render_pass, resource_options, resource_list)
+    iterate_resource("cbv", render_pass, resource_options, resource_list)
     process_resource("dsv", render_pass, resource_options, resource_list)
     process_resource("present", render_pass, resource_options, resource_list)
     check_pingpong(render_pass, resource_list)

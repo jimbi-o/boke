@@ -16,7 +16,7 @@
       },
       "shaders": [
         {
-          "input": "test/triangle_ms.hlsl",
+          "input": "test/geom_ms.glsl",
           "target": "ms_6_7",
           "entry": "main",
           "macros": {
