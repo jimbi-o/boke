@@ -14,6 +14,7 @@ enum class ResourceCreationType : uint8_t {
   kNone,
   kRtv,
   kDsv,
+  kCbv,
 };
 struct ResourceInfo {
   ResourceCreationType creation_type{};
@@ -26,7 +27,7 @@ struct ResourceInfo {
 struct ResourceSet;
 DXGI_FORMAT GetDxgiFormat(const char* format);
 Size2d GetSize2d(const rapidjson::Value&);
-StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources);
+StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources, const StrHashMap<Size2d>& explicit_buffer_size);
 StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info);
 D3D12MA::Allocator* CreateGpuMemoryAllocator(DxgiAdapter* adapter, D3d12Device* device);
 void ReleaseGpuMemoryAllocator(D3D12MA::Allocator* allocator);

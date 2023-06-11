@@ -311,7 +311,7 @@ TEST_CASE("barrier config") {
       .present = "swapchain"_id,
     },
   };
-  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
+  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"), {});
   auto transition_info = InitTransitionInfo(resource_info);
   auto current_write_index_list = InitWriteIndexList(resource_info);
   CHECK_EQ(transition_info->transition_info_index->size(), 6);

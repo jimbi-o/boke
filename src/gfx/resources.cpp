@@ -27,6 +27,26 @@ void GpuMemoryAllocatorDeallocate(void* ptr, void*) {
   boke::Deallocate(ptr);
 }
 auto CreateTexture2d(D3D12MA::Allocator* allocator,
+                     const D3D12_RESOURCE_DESC1& resource_desc,
+                     const D3D12_CLEAR_VALUE* clear_value,
+                     const D3D12_BARRIER_LAYOUT barrier_initial_layout) {
+  using namespace D3D12MA;
+  D3D12MA::ALLOCATION_DESC allocation_desc{
+    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
+  };
+  D3D12MA::Allocation* allocation{};
+  const auto hr = allocator->CreateResource3(
+      &allocation_desc,
+      &resource_desc,
+      barrier_initial_layout,
+      clear_value,
+      0, nullptr, // castable_format_num, castable_formats,
+      &allocation,
+      IID_NULL, nullptr); // pointer to resource
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocation;
+}
+auto CreateTexture2d(D3D12MA::Allocator* allocator,
                      const Size2d& size,
                      const DXGI_FORMAT format,
                      const D3D12_RESOURCE_FLAGS flags,
@@ -64,16 +84,63 @@ auto CreateTexture2d(D3D12MA::Allocator* allocator,
   DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
   return allocation;
 }
-auto CreateTexture2dRtv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
-  D3D12_CLEAR_VALUE clear_value{
+auto CreateConstantBuffer(D3D12MA::Allocator* allocator,
+                          const uint32_t width,
+                          const DXGI_FORMAT format,
+                          const D3D12_RESOURCE_FLAGS flags) {
+  using namespace D3D12MA;
+  D3D12_RESOURCE_DESC1 resource_desc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = 0,
+    .Width = width,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = format,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0,
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = flags,
+  };
+  D3D12MA::ALLOCATION_DESC allocation_desc{
+    .HeapType = D3D12_HEAP_TYPE_UPLOAD,
+  };
+  D3D12MA::Allocation* allocation{};
+  const auto hr = allocator->CreateResource3(
+      &allocation_desc,
+      &resource_desc,
+      D3D12_BARRIER_LAYOUT_UNDEFINED,
+      nullptr,
+      0, nullptr,
+      &allocation,
+      IID_NULL, nullptr); // pointer to resource
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return allocation;
+}
+auto GetTexture2dDesc(const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
+  return D3D12_RESOURCE_DESC1{
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    .Alignment = 0,
+    .Width = size.width,
+    .Height = size.height,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = format,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0,
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    .Flags = flags,
+  };
+}
+auto GetClearValueRtv(const DXGI_FORMAT format) {
+  return D3D12_CLEAR_VALUE{
     .Format = format,
     .Color = {},
   };
-  return CreateTexture2d(allocator, size, format,
-                         flags,
-                         D3D12_BARRIER_LAYOUT_RENDER_TARGET,
-                         &clear_value,
-                         0, nullptr);
 }
 auto GetTypelessFormat(const DXGI_FORMAT format) {
   switch (format) {
@@ -83,19 +150,14 @@ auto GetTypelessFormat(const DXGI_FORMAT format) {
       return format;
   }
 }
-auto CreateTexture2dDsv(D3D12MA::Allocator* allocator, const Size2d& size, const DXGI_FORMAT format, const D3D12_RESOURCE_FLAGS flags) {
-  D3D12_CLEAR_VALUE clear_value{
+auto GetClearValueDsv(const DXGI_FORMAT format) {
+  return D3D12_CLEAR_VALUE{
     .Format = format,
     .DepthStencil = {
       .Depth = 1.0f, // set 0.0f for inverse-z
       .Stencil = 0,
     },
   };
-  return CreateTexture2d(allocator, size, GetTypelessFormat(format),
-                         flags,
-                         D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE,
-                         &clear_value,
-                         0, nullptr);
 }
 struct ResourceSetCreationAsseet {
   D3D12MA::Allocator* allocator{};
@@ -108,14 +170,24 @@ void CreateResourceImpl(ResourceSetCreationAsseet* asset, const StrHash resource
   D3D12MA::Allocation* allocation[2];
   switch (resource_info->creation_type) {
     case ResourceCreationType::kRtv: {
+      auto desc = GetTexture2dDesc(resource_info->size, resource_info->format, resource_info->flags);
+      auto clear_value = GetClearValueRtv(resource_info->format);
       for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
-        allocation[i] = CreateTexture2dRtv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+        allocation[i] = CreateTexture2d(asset->allocator, desc, &clear_value, D3D12_BARRIER_LAYOUT_RENDER_TARGET);
       }
       break;
     }
     case ResourceCreationType::kDsv: {
       DEBUG_ASSERT(resource_info->physical_resource_num == 1, DebugAssert{});
-      allocation[0] = CreateTexture2dDsv(asset->allocator, resource_info->size, resource_info->format, resource_info->flags);
+      auto desc = GetTexture2dDesc(resource_info->size, GetTypelessFormat(resource_info->format), resource_info->flags);
+      auto clear_value = GetClearValueDsv(resource_info->format);
+      allocation[0] = CreateTexture2d(asset->allocator, desc, &clear_value, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE);
+      break;
+    }
+    case ResourceCreationType::kCbv: {
+      for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
+        allocation[i] = CreateConstantBuffer(asset->allocator, resource_info->size.width, resource_info->format, resource_info->flags);
+      }
       break;
     }
     case ResourceCreationType::kNone: {
@@ -140,11 +212,10 @@ auto GetCreationType(const char* const flag) {
   if (strcmp(flag, "dsv") == 0) {
     return ResourceCreationType::kDsv;
   }
-  if (strcmp(flag, "present") == 0) {
-    return ResourceCreationType::kNone;
-  }
   if (strcmp(flag, "cbv") == 0) {
-    // TODO
+    return ResourceCreationType::kCbv;
+  }
+  if (strcmp(flag, "present") == 0) {
     return ResourceCreationType::kNone;
   }
   if (strcmp(flag, "srv") == 0) {
@@ -228,7 +299,7 @@ Size2d GetSize2d(const rapidjson::Value& array) {
     .height = array[1].GetUint(),
   };
 }
-StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
+StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources, const StrHashMap<Size2d>& explicit_buffer_size) {
   StrHashMap<ResourceInfo> resource_info(resources.Size());
   for (const auto& resource : resources.GetArray()) {
     const auto name = resource["name"].GetString();
@@ -237,7 +308,7 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources) {
       .creation_type = GetCreationType(resource["initial_flag"].GetString()),
       .flags = GetResourceFlags(resource["flags"]),
       .format = GetDxgiFormat(resource["format"].GetString()),
-      .size = GetSize2d(resource["size"]),
+      .size = explicit_buffer_size.contains(hash) ? explicit_buffer_size[hash] : GetSize2d(resource["size"]),
       .physical_resource_num = resource["physical_resource_num"].GetUint(),
       .pingpong = resource["pingpong"].GetBool(),
     };
@@ -396,7 +467,7 @@ TEST_CASE("resources") {
   // parse resource info
   const uint32_t primary_width = 1920;
   const uint32_t primary_height = 1080;
-  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"));
+  auto resource_info = ParseResourceInfo(GetJson("tests/resources.json"), {});
   CHECK_EQ(resource_info.size(), 7);
   CHECK_EQ(resource_info["gbuffer0"_id].creation_type, ResourceCreationType::kRtv);
   CHECK_EQ(resource_info["gbuffer0"_id].flags, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);

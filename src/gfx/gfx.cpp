@@ -696,7 +696,9 @@ TEST_CASE("multiple render pass") {
   auto core = PrepareGfxCore(json["title"].GetString(), primarybuffer_size, AdapterType::kHighPerformance);
   auto device = CreateDevice(core.gfx_libraries.d3d12_library, core.dxgi_core.adapter);
   // resource info
-  auto resource_info = ParseResourceInfo(json["resource"]);
+  StrHashMap<Size2d> explicit_buffer_size;
+  explicit_buffer_size["camera"_id] = Size2d{sizeof(float) * 32,1};
+  auto resource_info = ParseResourceInfo(json["resource"], explicit_buffer_size);
   auto current_write_index_list = InitWriteIndexList(resource_info);
   // resources
   auto gpu_memory_allocator = CreateGpuMemoryAllocator(core.dxgi_core.adapter, device);
@@ -841,6 +843,7 @@ TEST_CASE("multiple render pass") {
   ReleaseResources(resource_set);
   ReleaseGpuMemoryAllocator(gpu_memory_allocator);
   current_write_index_list.~StrHashMap<uint32_t>();
+  explicit_buffer_size.~StrHashMap<Size2d>();
   resource_info.~StrHashMap<ResourceInfo>();
   device->Release();
   ReleaseGfxCore(core);
