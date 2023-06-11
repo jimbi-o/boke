@@ -323,7 +323,6 @@ void RenderPassGeometry(const RenderPassFuncCommonParams& common_params, const R
   SetViewportAndScissor(common_params.primarybuffer_size, command_list);
   SetRtvAndDsv(common_params, pass_params, command_list);
   const auto& material_id = pass_params.render_pass_info.material_id;
-  command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   command_list->SetGraphicsRootSignature(GetRootsig(common_params.material_set, material_id));
   if (pass_params.gpu_handle.ptr) {
     command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
@@ -336,7 +335,6 @@ void RenderPassPostProcess(const RenderPassFuncCommonParams& common_params, cons
   SetViewportAndScissor(common_params.primarybuffer_size, command_list);
   SetRtvAndDsv(common_params, pass_params, command_list);
   const auto& material_id = pass_params.render_pass_info.material_id;
-  command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   command_list->SetGraphicsRootSignature(GetRootsig(common_params.material_set, material_id));
   if (pass_params.gpu_handle.ptr) {
     command_list->SetGraphicsRootDescriptorTable(0, pass_params.gpu_handle);
