@@ -402,6 +402,7 @@ auto ParseRenderPass(const rapidjson::Value& json, uint32_t* render_pass_info_le
     render_pass_info[i].queue = GetJsonStrHash(pass, "queue");
     render_pass_info[i].type = GetJsonStrHash(pass, "type");
     render_pass_info[i].material = GetJsonStrHash(pass, "material");
+    render_pass_info[i].cbv = GetJsonStrHashList(pass, "cbv", &render_pass_info[i].cbv_num);
     render_pass_info[i].srv = GetJsonStrHashList(pass, "srv", &render_pass_info[i].srv_num);
     render_pass_info[i].rtv = GetJsonStrHashList(pass, "rtv", &render_pass_info[i].rtv_num);
     render_pass_info[i].dsv = GetJsonStrHash(pass, "dsv");
@@ -494,6 +495,45 @@ struct GuiParam {
 };
 void ShowGui(const DataSetForShowGuiFunc& data, GuiParam& param) {
   ShowDebugBufferSelector(data.resource_info, &param.debug_view_buffer_resource_id);
+}
+void UpdateCameraBuffers(const ResourceSet* resource_set, const StrHashMap<uint32_t>& current_write_index_list) {
+  const auto camera_id = "camera"_id;
+  auto resource = GetResource(resource_set, camera_id, GetResourceLocalIndexWrite(current_write_index_list, camera_id));
+  // TODO set matrix
+  auto dst = Map<float>(resource);
+  dst[0] = 1.0f;
+  dst[1] = 0.0f;
+  dst[2] = 0.0f;
+  dst[3] = 0.0f;
+  dst[4] = 0.0f;
+  dst[5] = 1.0f;
+  dst[6] = 0.0f;
+  dst[7] = 0.0f;
+  dst[8] = 0.0f;
+  dst[9] = 0.0f;
+  dst[10] = 1.0f;
+  dst[11] = 0.0f;
+  dst[12] = 0.0f;
+  dst[13] = 0.0f;
+  dst[14] = 0.0f;
+  dst[15] = 1.0f;
+  dst[16] = 1.0f;
+  dst[17] = 0.0f;
+  dst[18] = 0.0f;
+  dst[19] = 0.0f;
+  dst[20] = 0.0f;
+  dst[21] = 1.0f;
+  dst[22] = 0.0f;
+  dst[23] = 0.0f;
+  dst[24] = 0.0f;
+  dst[25] = 0.0f;
+  dst[26] = 1.0f;
+  dst[27] = 0.0f;
+  dst[28] = 0.0f;
+  dst[29] = 0.0f;
+  dst[30] = 0.0f;
+  dst[31] = 1.0f;
+  Unmap(resource, GetUint32(sizeof(float) * 32));
 }
 } // namespace
 #include "doctest/doctest.h"
@@ -794,7 +834,8 @@ TEST_CASE("multiple render pass") {
     const auto swapchain_backbuffer_index = swapchain->GetCurrentBackBufferIndex();
     current_write_index_list["swapchain"_id] = swapchain_backbuffer_index;
     // update cbuffers
-    // TODO
+    SucceedFrameBufferedBufferLocalIndices(resource_info, current_write_index_list);
+    UpdateCameraBuffers(resource_set, current_write_index_list);
     // process debug buffer view pass
     const auto current_render_pass_name = (gui_params.debug_view_buffer_resource_id != kEmptyStr) ? "debug_buffer_view"_id : "default"_id;
     const auto& current_render_pass = render_pass_list[current_render_pass_name];

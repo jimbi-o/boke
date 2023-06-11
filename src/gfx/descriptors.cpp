@@ -15,6 +15,7 @@ struct HandleIndex {
   union {
     uint32_t rtv;
     uint32_t dsv;
+    uint32_t cbv;
   };
   uint32_t srv;
 };
@@ -37,6 +38,10 @@ auto GetDescriptorHandleIncrementSize(D3d12Device* device) {
 }
 void CountDescriptorHandleNumImpl(DescriptorHandleNum* descriptor_handle_num, const StrHash, const ResourceInfo* resource_info) {
   if (resource_info->flags == D3D12_RESOURCE_FLAG_NONE) { return; }
+  if (resource_info->creation_type == ResourceCreationType::kCbv) {
+    descriptor_handle_num->cbv_srv_uav += resource_info->physical_resource_num;
+    return;
+  }
   if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
     descriptor_handle_num->rtv += resource_info->physical_resource_num;
   }
@@ -129,12 +134,20 @@ void PrepareDescriptorHandlesImpl(DescriptorHandleImplAsset* asset, const StrHas
   for (uint32_t i = 0; i < resource_info->physical_resource_num; i++) {
     resource[i] = GetResource(asset->resource_set, resource_id, i);
   }
-  if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) {
-    AddDescriptorHandlesRtv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
-  }
-  if (resource_info->flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
-    DEBUG_ASSERT(resource_info->physical_resource_num == 1, DebugAssert{});
-    AddDescriptorHandlesDsv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+  switch (resource_info->creation_type) {
+    case ResourceCreationType::kRtv: {
+      AddDescriptorHandlesRtv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+      break;
+    }
+    case ResourceCreationType::kDsv: {
+      DEBUG_ASSERT(resource_info->physical_resource_num == 1, DebugAssert{});
+      AddDescriptorHandlesDsv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+      break;
+    }
+    case ResourceCreationType::kCbv: {
+      AddDescriptorHandlesCbv(resource_id, resource, resource_info->physical_resource_num, resource_info->size.width, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
+      break;
+    }
   }
   if (!(resource_info->flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)) {
     AddDescriptorHandlesSrv(resource_id, resource_info->format, resource, resource_info->physical_resource_num, asset->device, asset->descriptor_heap_head_addr, asset->descriptor_handle_increment_size, asset->descriptor_handles);
@@ -217,6 +230,21 @@ void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D
     descriptor_handles->cbv_srv_uav_handles->push_back(handle);
   }
 }
+void AddDescriptorHandlesCbv(const StrHash resource_id, ID3D12Resource** resources, const uint32_t resource_num, const uint32_t buffer_size_in_bytes, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles) {
+  (*descriptor_handles->handle_index)[resource_id].cbv = descriptor_handles->cbv_srv_uav_handles->size();
+  for (uint32_t i = 0; i < resource_num; i++) {
+    const auto handle = GetDescriptorHandle(descriptor_heap_head_addr.cbv_srv_uav, descriptor_handle_increment_size.cbv_srv_uav, descriptor_handles->cbv_srv_uav_handles->size());
+    if (resources && resources[i]) {
+      DEBUG_ASSERT(buffer_size_in_bytes == Align(buffer_size_in_bytes, 256), DebugAssert{});
+      D3D12_CONSTANT_BUFFER_VIEW_DESC desc{
+        .BufferLocation = resources[i]->GetGPUVirtualAddress(),
+        .SizeInBytes = buffer_size_in_bytes,
+      };
+      device->CreateConstantBufferView(&desc, handle);
+    }
+    descriptor_handles->cbv_srv_uav_handles->push_back(handle);
+  }
+}
 ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_handle_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag) {
   ID3D12DescriptorHeap* descriptor_heap{};
   const D3D12_DESCRIPTOR_HEAP_DESC desc = {
@@ -236,6 +264,9 @@ D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleDsv(const StrHash resource_id, co
 }
 D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleSrv(const StrHash resource_id, const uint32_t index, const DescriptorHandles* descriptor_handles) {
   return (*descriptor_handles->cbv_srv_uav_handles)[(*descriptor_handles->handle_index)[resource_id].srv + index];
+}
+D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleCbv(const StrHash resource_id, const uint32_t index, const DescriptorHandles* descriptor_handles) {
+  return (*descriptor_handles->cbv_srv_uav_handles)[(*descriptor_handles->handle_index)[resource_id].cbv + index];
 }
 } // namespace boke
 #include "doctest/doctest.h"

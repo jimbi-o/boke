@@ -251,6 +251,14 @@ auto GetTotalPhysicalResourceNum(const StrHashMap<ResourceInfo>& resource_info) 
   }, &sum);
   return sum;
 }
+void SucceedFrameBufferedBufferLocalIndicesImpl(StrHashMap<uint32_t>* current_write_index_list, const StrHash resource_id, const ResourceInfo* info) {
+  if (info->creation_type != ResourceCreationType::kCbv) { return; }
+  auto it = current_write_index_list->get(resource_id);
+  *it = *it + 1;
+  if (*it >= info->physical_resource_num) {
+    *it = 0;
+  }
+}
 } // namespace
 namespace boke {
 DXGI_FORMAT GetDxgiFormat(const char* format) {
@@ -304,7 +312,8 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources, co
   for (const auto& resource : resources.GetArray()) {
     const auto name = resource["name"].GetString();
     const auto hash = GetStrHash(name);
-    resource_info[hash] = {
+    auto& info = resource_info[hash];
+    info = {
       .creation_type = GetCreationType(resource["initial_flag"].GetString()),
       .flags = GetResourceFlags(resource["flags"]),
       .format = GetDxgiFormat(resource["format"].GetString()),
@@ -312,6 +321,9 @@ StrHashMap<ResourceInfo> ParseResourceInfo(const rapidjson::Value& resources, co
       .physical_resource_num = resource["physical_resource_num"].GetUint(),
       .pingpong = resource["pingpong"].GetBool(),
     };
+    if (info.creation_type == ResourceCreationType::kCbv) {
+      info.size.width = Align(info.size.width, 256);
+    }
   }
   return resource_info;
 }
@@ -378,7 +390,7 @@ void ReleaseResources(ResourceSet* resource_set) {
 StrHashMap<uint32_t> InitWriteIndexList(const StrHashMap<ResourceInfo>& resource_info) {
   StrHashMap<uint32_t> current_write_index_list(resource_info.size());
   resource_info.iterate<StrHashMap<uint32_t>>([](StrHashMap<uint32_t>* current_write_index_list, const StrHash resource_id, const ResourceInfo* resource_info) {
-    const auto index = resource_info->pingpong ? 0U : kSinglePhysicalResource;
+    const auto index = resource_info->physical_resource_num > 1 ? 0U : kSinglePhysicalResource;
     current_write_index_list->insert(resource_id, index);
   }, &current_write_index_list);
   return current_write_index_list;
@@ -393,12 +405,27 @@ void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t res
 uint32_t GetResourceLocalIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
   const auto index = current_write_index_list[id];
   if (index == kSinglePhysicalResource) { return 0; }
+  // buggy if physical_resource_num > 2
   return index == 0 ? 1 : 0;
 }
 uint32_t GetResourceLocalIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id) {
   const auto index = current_write_index_list[id];
   if (index == kSinglePhysicalResource) { return 0; }
   return index;
+}
+void SucceedFrameBufferedBufferLocalIndices(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& current_write_index_list) {
+  resource_info.iterate<StrHashMap<uint32_t>>(SucceedFrameBufferedBufferLocalIndicesImpl, &current_write_index_list);
+}
+void* Map(ID3D12Resource* resource) {
+  D3D12_RANGE range{.Begin = 0, .End = 0,};
+  void* ptr{};
+  auto hr = resource->Map(0, &range, &ptr);
+  DEBUG_ASSERT(SUCCEEDED(hr), DebugAssert{});
+  return ptr;
+}
+void Unmap(ID3D12Resource* resource, const uint32_t written_bytes) {
+  D3D12_RANGE range{.Begin = 0, .End = written_bytes,};
+  resource->Unmap(0, &range);
 }
 } // namespace boke
 #include "doctest/doctest.h"

@@ -36,5 +36,10 @@ void ReleaseResources(ResourceSet*);
 void AddResource(const StrHash id, ID3D12Resource** resource, const uint32_t resource_num, ResourceSet* resource_set);
 uint32_t GetResourceLocalIndexRead(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
 uint32_t GetResourceLocalIndexWrite(const StrHashMap<uint32_t>& current_write_index_list, const StrHash id);
+void SucceedFrameBufferedBufferLocalIndices(const StrHashMap<ResourceInfo>& resource_info, StrHashMap<uint32_t>& current_write_index_list);
 ID3D12Resource* GetResource(const ResourceSet* resource_set, const StrHash id, const uint32_t index);
+void* Map(ID3D12Resource*);
+template <typename T>
+T* Map(ID3D12Resource* resource) { return static_cast<T*>(Map(resource)); }
+void Unmap(ID3D12Resource*, const uint32_t written_bytes);
 }

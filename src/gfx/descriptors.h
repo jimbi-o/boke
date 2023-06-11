@@ -41,8 +41,10 @@ void ReleaseDescriptorHandles(DescriptorHandles*);
 void AddDescriptorHandlesRtv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);
 void AddDescriptorHandlesDsv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);
 void AddDescriptorHandlesSrv(const StrHash resource_id, DXGI_FORMAT format, ID3D12Resource** resources, const uint32_t resource_num, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);
+void AddDescriptorHandlesCbv(const StrHash resource_id, ID3D12Resource** resources, const uint32_t resource_num, const uint32_t buffer_size_in_bytes, D3d12Device* device, const DescriptorHeapHeadAddr& descriptor_heap_head_addr, const DescriptorHandleIncrementSize& descriptor_handle_increment_size, DescriptorHandles* descriptor_handles);
 D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleRtv(const StrHash resource_id, const uint32_t index, const DescriptorHandles*);
 D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleDsv(const StrHash resource_id, const uint32_t index, const DescriptorHandles*);
 D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleSrv(const StrHash resource_id, const uint32_t index, const DescriptorHandles*);
+D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandleCbv(const StrHash resource_id, const uint32_t index, const DescriptorHandles*);
 ID3D12DescriptorHeap* CreateDescriptorHeap(D3d12Device* device, const D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type, const uint32_t descriptor_handle_num, const D3D12_DESCRIPTOR_HEAP_FLAGS descriptor_heap_flag);
 } // namespace boke

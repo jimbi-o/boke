@@ -4,6 +4,8 @@ struct RenderPassInfo {
   StrHash queue{kEmptyStr};
   StrHash type{kEmptyStr};
   StrHash material{kEmptyStr};
+  StrHash* cbv{};
+  uint32_t cbv_num{};
   StrHash* srv{};
   uint32_t srv_num{};
   StrHash* rtv{};

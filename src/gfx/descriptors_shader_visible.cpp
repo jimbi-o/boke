@@ -13,26 +13,35 @@
 namespace {
 using namespace boke;
 uint32_t GetShaderVisibleDescriptorNum(const RenderPassInfo& render_pass_info) {
-  return render_pass_info.srv_num;
+  return render_pass_info.cbv_num + render_pass_info.srv_num;
 }
 void CopyDescriptorsToShaderVisibleDescriptor(const RenderPassInfo& render_pass_info, const DescriptorHandles* descriptor_handles, const StrHashMap<uint32_t>& current_write_index_list, const uint32_t increment_size, D3d12Device* device, const D3D12_CPU_DESCRIPTOR_HANDLE& dst_handle, const uint32_t dst_handle_num) {
-  DEBUG_ASSERT(render_pass_info.srv_num == dst_handle_num, DebugAssert{});
-  if (render_pass_info.srv_num == 0) { return; }
   const uint32_t src_descriptor_num_len = 16;
   uint32_t src_descriptor_num[src_descriptor_num_len]{};
   D3D12_CPU_DESCRIPTOR_HANDLE src_descriptor_handles[src_descriptor_num_len]{};
   uint32_t src_descriptor_num_index = 0;
-  {
-    src_descriptor_handles[src_descriptor_num_index].ptr = GetDescriptorHandleSrv(render_pass_info.srv[0], GetResourceLocalIndexRead(current_write_index_list, render_pass_info.srv[0]), descriptor_handles).ptr;
+  for (uint32_t i = 0; i < render_pass_info.cbv_num; i++) {
+    const auto handle = GetDescriptorHandleCbv(render_pass_info.cbv[i], GetResourceLocalIndexWrite(current_write_index_list, render_pass_info.cbv[i]), descriptor_handles);
+    if (src_descriptor_handles[src_descriptor_num_index].ptr + src_descriptor_num[src_descriptor_num_index] * increment_size == handle.ptr) {
+      src_descriptor_num[src_descriptor_num_index]++;
+      continue;
+    }
+    if (src_descriptor_handles[src_descriptor_num_index].ptr != 0) {
+      src_descriptor_num_index++;
+    }
+    src_descriptor_handles[src_descriptor_num_index].ptr = handle.ptr;
     src_descriptor_num[src_descriptor_num_index] = 1;
+    DEBUG_ASSERT(src_descriptor_num_index <= src_descriptor_num_len, DebugAssert{});
   }
-  for (uint32_t i = 1; i < render_pass_info.srv_num; i++) {
+  for (uint32_t i = 0; i < render_pass_info.srv_num; i++) {
     const auto handle = GetDescriptorHandleSrv(render_pass_info.srv[i], GetResourceLocalIndexRead(current_write_index_list, render_pass_info.srv[i]), descriptor_handles);
     if (src_descriptor_handles[src_descriptor_num_index].ptr + src_descriptor_num[src_descriptor_num_index] * increment_size == handle.ptr) {
       src_descriptor_num[src_descriptor_num_index]++;
       continue;
     }
-    src_descriptor_num_index++;
+    if (src_descriptor_handles[src_descriptor_num_index].ptr != 0) {
+      src_descriptor_num_index++;
+    }
     src_descriptor_handles[src_descriptor_num_index].ptr = handle.ptr;
     src_descriptor_num[src_descriptor_num_index] = 1;
     DEBUG_ASSERT(src_descriptor_num_index <= src_descriptor_num_len, DebugAssert{});
